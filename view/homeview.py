@@ -1,4 +1,5 @@
 import math
+import random
 import time
 import webbrowser
 from typing import Optional
@@ -271,11 +272,11 @@ class HomeView(BaseView):
 
         send_button = ctk.CTkButton(message_frame, text="Send", command=lambda: self.pre_send_message())
         send_button.grid(row=4, column=0, sticky="nsew", pady=(15, 0), padx=10)
-        send_button.configure(state="disabled")
+        send_button.configure(state="enabled" if len(self.message.get("1.0", "end-1c")) > 3 else "disabled")
         self.send_button = send_button
         self.widgets.append(self.send_button)
 
-    def show_loading_screen(self, tab_view_index: int, randon: bool = True):
+    def show_loading_screen(self, tab_view_index: int, randon: bool = True, service: Optional[str] = None):
         loading_frame = ctk.CTkFrame(self.tab_view.tab(self.tab_names[tab_view_index]))
         loading_frame.grid(row=0, column=0, columnspan=3, rowspan=2, sticky="nsew")
         loading_frame.grid_rowconfigure(0, weight=1)
@@ -302,9 +303,12 @@ class HomeView(BaseView):
         percent_label.grid(row=2, column=0, sticky="nsew", pady=(5, 0))
         self.percent_var = percent_var
 
-        if randon:
+        if randon and service is None:
             self.progress_bar.start()
             self.percent_var.set("Loading...")
+        elif randon and service == "reminder":
+            self.progress_bar.start()
+            self.percent_var.set("Sending reminders...")
 
     def clean_loading_frame(self):
         self.progress_bar = None
@@ -435,7 +439,10 @@ class HomeView(BaseView):
             self.send_button.configure(state="disabled")
 
     def start_reminder_service(self, reminder_frequency):
+
         self.service_manager.start_reminder_service(reminder_frequency)
+
+
 
     def create_reminder_tab(self):
         reminder_frame = ctk.CTkFrame(self.tab_view.tab(self.tab_names[1]), width=160, height=250, border_width=1,
@@ -460,6 +467,7 @@ class HomeView(BaseView):
                 print("Reminder frequency cannot be less than 1 day")
 
             print(f"Reminder frequency set to {frequency} days")
+
             self.start_reminder_service(frequency)
 
         submit_reminder_button = ctk.CTkButton(reminder_frame, text="Start reminders",

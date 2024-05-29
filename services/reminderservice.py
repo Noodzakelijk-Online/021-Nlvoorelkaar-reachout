@@ -1,5 +1,7 @@
 import csv
+import time
 from datetime import datetime
+from random import random, randint
 from typing import Optional
 import logging
 
@@ -140,6 +142,8 @@ class ReminderService:
                         'message[loaded]': message_loaded
                     }
 
+                    # sleep between 30 and 75 seconds
+                    time.sleep(randint(30, 75))
                     response = SessionManager.get_session().post(chat_url, data=data, headers=headers)
                     if response.status_code == 200:
                         return True

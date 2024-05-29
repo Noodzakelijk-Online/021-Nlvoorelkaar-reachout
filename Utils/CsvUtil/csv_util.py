@@ -5,7 +5,7 @@ import sys
 from datetime import date, datetime
 from os.path import join, dirname
 
-contacts_date_path = pathlib.Path(join(dirname(sys.executable), 'contacts_date.csv'))
+contacts_date_path = pathlib.Path(join(dirname(sys.executable), 'test.csv'))
 chats_no_response_path = pathlib.Path(join(dirname(sys.executable), 'chats_no_response.csv'))
 
 
