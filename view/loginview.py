@@ -119,6 +119,8 @@ class LoginView(BaseView):
             self.username.set(saved_username)
             self.password.set(saved_password)
             self.remember_me_checkbox.select()
+            # added this for automatic login if the login data is saved
+            self.login()
         center_window(self.root_window)
 
     def login(self) -> None:

@@ -54,7 +54,7 @@ class MessagingService:
                 time.sleep(random.uniform(minimum_time, maximum_time))
 
     def __send_message(self, volunteer_id: str) -> bool:
-        self.loginController.login(self.username, self.password)
+
         url = f'{url_volunteer}{volunteer_id}?showMessage=1'
         try:
             response = SessionManager.get_session().get(url, headers=headers)
@@ -87,8 +87,6 @@ class MessagingService:
         except Exception as e:
             logging.error(f'Error while sending message to volunteer with id {volunteer_id}: {e.__str__()}')
             return False
-        finally:
-            self.loginController.logout()
 
     def check_if_message_was_sent(self, volunteer_id: str):
         """
@@ -98,7 +96,7 @@ class MessagingService:
 
         :return: True if the message was sent, False otherwise.
         """
-        self.loginController.login(self.username, self.password)
+
         url = "https://www.nlvoorelkaar.nl/mijn-pagina/berichten"
         try:
             response = SessionManager.get_session().get(url, headers=headers)
@@ -131,5 +129,4 @@ class MessagingService:
             logging.error(f'Error while checking if message was sent to volunteer with id {volunteer_id}: {str(e)}')
             return False
 
-        finally:
-            self.loginController.logout()
+
