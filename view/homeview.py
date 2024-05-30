@@ -443,30 +443,35 @@ class HomeView(BaseView):
         self.service_manager.start_reminder_service(reminder_frequency, custom_reminder_message)
 
     def create_reminder_tab(self):
-        reminder_frame = ctk.CTkFrame(self.tab_view.tab(self.tab_names[1]), width=160, height=250, border_width=1,
-                                      border_color="black")
-        reminder_frame.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
+        reminder_frame = ctk.CTkFrame(self.tab_view.tab(self.tab_names[1]))
+        reminder_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         self.widgets.append(reminder_frame)
 
-        # Add input field for reminder frequency
-        reminder_frequency = ctk.StringVar()
-        reminder_frequency_label = ctk.CTkLabel(reminder_frame, text="Reminder Frequency (in days)")
+        # Reminder Frequency Frame
+        reminder_frequency_frame = ctk.CTkFrame(reminder_frame)
+        reminder_frequency_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+
+        reminder_frequency_label = ctk.CTkLabel(reminder_frequency_frame, text="Reminder Frequency (in days)")
         reminder_frequency_label.grid(row=0, column=0, sticky="w", pady=(0, 5))
         self.widgets.append(reminder_frequency_label)
 
-        reminder_frequency_entry = ctk.CTkEntry(reminder_frame, textvariable=reminder_frequency)
+        reminder_frequency = ctk.StringVar()
+        reminder_frequency_entry = ctk.CTkEntry(reminder_frequency_frame, textvariable=reminder_frequency)
         reminder_frequency_entry.grid(row=1, column=0, sticky="nsew", padx=5)
         self.widgets.append(reminder_frequency_entry)
 
-        # Add reminder message input field
-        reminder_message_input = ctk.StringVar()
-        reminder_message_label = ctk.CTkLabel(reminder_frame, text="Reminder Message")
-        reminder_message_label.grid(row=0, column=2, sticky="w", pady=(0, 5))
-        self.widgets.append(reminder_message_label)
+        reminder_message_frame = ctk.CTkFrame(reminder_frame)
+        reminder_message_frame.grid(row=0, column=2, sticky="nsew", padx=5, pady=5)
 
-        reminder_message_entry = ctk.CTkEntry(reminder_frame, textvariable=reminder_message_input)
-        reminder_message_entry.grid(row=1, column=2, sticky="nsew", padx=5)
-        self.widgets.append(reminder_message_entry)
+        reminder_message_label = ctk.CTkLabel(reminder_message_frame, text="Reminder Message")
+        reminder_message_label.grid(row=0, column=0, sticky="w", pady=(0, 5))
+        self.widgets.append(reminder_message_label)
+        message_entry = ctk.CTkTextbox(reminder_message_frame, width=380, height=450)
+        message_entry.grid(row=1, column=0, sticky="nsew", ipady=3, padx=10)
+        message_entry.bind("<KeyRelease>")
+
+        reminder_frequency_frame.place(relx=0.3, rely=0.1, anchor="center")
+        reminder_message_frame.place(relx=0.6, rely=0.4, anchor="center")
 
         def set_reminder_frequency():
             frequency = reminder_frequency.get() or 1
@@ -479,7 +484,7 @@ class HomeView(BaseView):
             return frequency
 
         def set_custom_reminder_message():
-            reminder_message = reminder_message_input.get()
+            reminder_message = message_entry.get("1.0", "end-1c")
             return reminder_message
 
         #    Add a button to start the reminder service
@@ -488,6 +493,8 @@ class HomeView(BaseView):
                                                           set_reminder_frequency(), set_custom_reminder_message()
                                                       ))
         start_reminder_service_button.grid(row=3, column=0, sticky="nsew", pady=(10, 0))
+
+        start_reminder_service_button.place(relx=0.3, rely=0.2, anchor="center")
 
         self.widgets.append(start_reminder_service_button)
 

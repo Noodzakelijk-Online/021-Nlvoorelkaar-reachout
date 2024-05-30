@@ -22,7 +22,7 @@ class ReminderService:
         self.notifier = None
         self.loginController = loginController if loginController else LoginController()
 
-    def start_reminder_service(self, notifier, reminder_frequency: Optional[int] = None,
+    def start_reminder_service(self, notifier, reminder_frequency: Optional[str] = None,
                                reminder_message: Optional[str] = None):
 
         if reminder_frequency and reminder_message:
@@ -180,7 +180,7 @@ class ReminderService:
                 logging.error(f'Error while sending reminder to chat with url {chat_url}: {str(e)}')
                 return False
 
-    def csv_handler(self, chats_with_no_response, reminder_frequency: int, reminder_message: Optional[str] = None):
+    def csv_handler(self, chats_with_no_response, reminder_frequency: str, reminder_message: Optional[str] = None):
         if not chats_with_no_response:
             return
 
@@ -254,7 +254,7 @@ class ReminderService:
                             soup = BeautifulSoup(response.text, 'html.parser')
                             message_metas = soup.find_all('p', {'class': 'meta conversation__meta'})
 
-                            if self.check_last_message_date(message_metas, reminder_frequency):
+                            if self.check_last_message_date(message_metas, int(reminder_frequency)):
                                 message_authors = []
                                 for message_meta in message_metas:
                                     author = message_meta.text.split(' ')[0]
@@ -336,6 +336,7 @@ class ReminderService:
             last_message_date = datetime.strptime(last_message_date, '%d.%m.%Y')
 
             delta = today - last_message_date
+
             return delta.days >= reminder_frequency
         except Exception as e:
             print(f'Error while checking last message date: {str(e)}')
