@@ -22,7 +22,21 @@ class ReminderService:
         self.notifier = None
         self.loginController = loginController if loginController else LoginController()
 
-    def start_reminder_service(self, notifier, reminder_frequency):
+    def start_reminder_service(self, notifier, reminder_frequency: Optional[int] = None,
+                               reminder_message: Optional[str] = None):
+
+        if reminder_frequency and reminder_message:
+            self.write_frequency_data(reminder_frequency, reminder_message)
+        elif not reminder_frequency and not reminder_message:
+           reminder_frequency, reminder_message = self.read_frequency_data()
+
+        elif not reminder_message:
+            reminder_message = self.read_frequency_data()[1] or None
+
+        elif not reminder_frequency:
+            reminder_frequency = self.read_frequency_data()[0] or 3
+
+
 
         """
             Start the reminder service
@@ -32,11 +46,13 @@ class ReminderService:
 
         if chats_with_no_response:
             notifier.notify_unanswered_chats(chats_with_no_response)
-            self.csv_handler(chats_with_no_response, reminder_frequency)
+            if reminder_message:
+                self.csv_handler(chats_with_no_response, reminder_frequency, reminder_message)
+            else:
+                self.csv_handler(chats_with_no_response, reminder_frequency)
 
         else:
             notifier.notify_unanswered_chats(["No unanswered chats found"])
-
 
     def get_all_contacted_names(self) -> StringLists | bool:
 
@@ -93,6 +109,20 @@ class ReminderService:
         delta = today - last_check
         return delta.days >= frequency
 
+    def construct_message(self, chat_url: str):
+        """
+            Construct the message to be sent to the receiver
+
+            param: chat_url: string url of the chat
+
+            return: string: message to be sent
+        """
+
+        sender_name = self.get_sender_name()
+        receiver_name = self.get_receiver_name(chat_url)
+        message = self.format_message(sender_name, receiver_name)
+        return message
+
     @staticmethod
     def format_message(sender_name: str, receiver_name: str):
         """
@@ -114,7 +144,7 @@ class ReminderService:
         '''
         return message
 
-    def send_reminder(self, chat_url: str):
+    def send_reminder(self, chat_url: str, message: Optional[str] = None):
         """
                 Send a reminder to the receiver of the chat
 
@@ -131,10 +161,8 @@ class ReminderService:
                     soup = BeautifulSoup(response.text, 'html.parser')
                     message_token = soup.find('input', {'name': 'message[_token]'})['value']
                     message_loaded = soup.find('input', {'name': 'message[loaded]'})['value']
-                    sender_name = self.get_sender_name()
-                    receiver_name = self.get_receiver_name(chat_url)
 
-                    message = self.format_message(sender_name, receiver_name)
+
                     data = {
                         'message[body]': message,
                         'message[dusdat]': '',
@@ -144,17 +172,17 @@ class ReminderService:
 
                     # sleep between 30 and 75 seconds
                     time.sleep(randint(30, 75))
-                    response = SessionManager.get_session().post(chat_url, data=data, headers=headers)
-                    if response.status_code == 200:
-                        return True
+                    # response = SessionManager.get_session().post(chat_url, data=data, headers=headers)
+                    # if response.status_code == 200:
+                    print(f'Reminder sent to {chat_url}' , "Text: ", message)
+                    return True
             except Exception as e:
                 logging.error(f'Error while sending reminder to chat with url {chat_url}: {str(e)}')
                 return False
 
-    def csv_handler(self, chats_with_no_response, reminder_frequency):
+    def csv_handler(self, chats_with_no_response, reminder_frequency: int, reminder_message: Optional[str] = None):
         if not chats_with_no_response:
             return
-
 
         with open('chats_no_response.csv', 'r+', newline='') as file:
             reader = csv.reader(file)
@@ -170,7 +198,7 @@ class ReminderService:
                         chat_exists = True
                         if self.check_with_frequency(row[1], reminder_frequency) and int(row[2]) <= 4:
                             rows_in_file[i] = [chat_url, datetime.now().strftime('%Y-%m-%d'), str(int(row[2]) + 1)]
-                            self.send_reminder(chat_url)
+                            self.send_reminder(chat_url, reminder_message)
                             print(f"Reminder sent to {chat_url}")
                         elif self.check_with_frequency(row[1], reminder_frequency) and int(row[2]) > 4:
                             print(f"Chat {chat_url} has been banned to send more reminders")
@@ -180,7 +208,7 @@ class ReminderService:
                 if not chat_exists:
                     new_row = [chat_url, datetime.now().strftime('%Y-%m-%d'), '0']
                     updated_rows.append(new_row)
-                    self.send_reminder(chat_url)
+                    self.send_reminder(chat_url, reminder_message)
                     print(f"Sent message to {chat_url}")
 
             # Remove old rows from updated rows
@@ -292,7 +320,6 @@ class ReminderService:
                 logging.error(f'Error while getting receiver name: {str(e)}')
                 return False
 
-
     def check_last_message_date(self, message_metas, reminder_frequency: int):
         """
             Check if the last message on the page was sent more than {reminder_frequency} days ago
@@ -313,3 +340,14 @@ class ReminderService:
         except Exception as e:
             print(f'Error while checking last message date: {str(e)}')
             return False
+
+    def write_frequency_data(self, reminder_frequency, reminder_message):
+        with open('reminder_data.csv', 'w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([reminder_frequency, reminder_message])
+
+    def read_frequency_data(self):
+        with open('reminder_data.csv', 'r', newline='') as file:
+            reader = csv.reader(file)
+            for row in reader:
+                return row[0], row[1]

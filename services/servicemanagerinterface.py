@@ -34,8 +34,9 @@ class ServiceManagerInterface(ABC):
     def send_messages(self, username, password, param, param1, data):
         pass
 
-    def start_reminder_service(self, reminder_frequency):
+    def start_reminder_service(self, reminder_frequency, custom_reminder_message):
         pass
 
     def get_unanswered_chats(self, reminder_frequency):
         pass
+
