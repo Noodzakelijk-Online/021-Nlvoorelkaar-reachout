@@ -28,15 +28,13 @@ class ReminderService:
         if reminder_frequency and reminder_message:
             self.write_frequency_data(reminder_frequency, reminder_message)
         elif not reminder_frequency and not reminder_message:
-           reminder_frequency, reminder_message = self.read_frequency_data()
+            reminder_frequency, reminder_message = self.read_frequency_data()
 
         elif not reminder_message:
             reminder_message = self.read_frequency_data()[1] or None
 
         elif not reminder_frequency:
             reminder_frequency = self.read_frequency_data()[0] or 3
-
-
 
         """
             Start the reminder service
@@ -162,7 +160,6 @@ class ReminderService:
                     message_token = soup.find('input', {'name': 'message[_token]'})['value']
                     message_loaded = soup.find('input', {'name': 'message[loaded]'})['value']
 
-
                     data = {
                         'message[body]': message,
                         'message[dusdat]': '',
@@ -171,10 +168,10 @@ class ReminderService:
                     }
 
                     # sleep between 30 and 75 seconds
-                    time.sleep(randint(30, 75))
+                    # time.sleep(randint(45, 75))
                     # response = SessionManager.get_session().post(chat_url, data=data, headers=headers)
                     # if response.status_code == 200:
-                    print(f'Reminder sent to {chat_url}' , "Text: ", message)
+                    print(f'Reminder sent to {chat_url}', "Text: ", message)
                     return True
             except Exception as e:
                 logging.error(f'Error while sending reminder to chat with url {chat_url}: {str(e)}')
@@ -230,7 +227,7 @@ class ReminderService:
             """
 
         names_urls_object = self.get_all_contacted_names()
-        chats_with_no_response = []
+        chats_with_no_response = set()
 
         try:
             volunteer_names = names_urls_object.names
@@ -259,9 +256,12 @@ class ReminderService:
                                 for message_meta in message_metas:
                                     author = message_meta.text.split(' ')[0]
                                     if author in volunteer_names:
-                                        message_authors.append(author)
+                                        if not self.check_last_message_date(message_meta, 60):
+                                            message_authors.append(author)
+                                        else:
+                                            pass
                                 if len(message_authors) == 0:
-                                    chats_with_no_response.append(chat_url)
+                                    chats_with_no_response.add(chat_url)
 
                                     continue
 
@@ -331,7 +331,11 @@ class ReminderService:
         """
 
         try:
-            last_message_date = message_metas[-1].text[-16:-6:1]
+            if len(message_metas) == 1:
+                last_message_date = message_metas.text[-16:-6:1]
+            else:
+                last_message_date = message_metas[-1].text[-16:-6:1]
+
             today = datetime.now()
             last_message_date = datetime.strptime(last_message_date, '%d.%m.%Y')
 
