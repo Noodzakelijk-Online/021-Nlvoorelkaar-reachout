@@ -359,8 +359,8 @@ class HomeView(BaseView):
             self.update_message_sent()
         elif service_id == 'notify_progress_message_sending':
             self.update_progress_bar_to_message_sending(data)
-        elif service_id == 'notify_unanswered_chats':
-            self.fetch_unanswered_chats(data)
+        # elif service_id == 'notify_unanswered_chats':
+        #     self.fetch_unanswered_chats(data)
 
     def update_option_menu(self, data):
         if len(data) == 0:
@@ -498,6 +498,17 @@ class HomeView(BaseView):
 
         self.widgets.append(start_reminder_service_button)
 
+        stop_reminder_service_button = ctk.CTkButton(reminder_frame, text="Stop reminder service",
+                                                     command=self.stop_reminder_service)
+        stop_reminder_service_button.grid(row=3, column=2, sticky="nsew", pady=(10, 0))
+        self.widgets.append(stop_reminder_service_button)
+
+        stop_reminder_service_button.place(relx=0.3, rely=0.3, anchor="center")
+
+    def stop_reminder_service(self):
+        print("Stopping reminder service")
+        self.service_manager.stop_reminder_service()
+
     def create_logs_tab(self):
         # Create the main logs frame to take entire height
         logs_frame = ctk.CTkFrame(self.tab_view.tab(self.tab_names[2]), border_width=1, border_color="black")
@@ -571,39 +582,39 @@ class HomeView(BaseView):
 
         self.fetch_logs(error_logs_frame, info_logs_frame)
 
-    def fetch_unanswered_chats(self, data):
-
-        time.sleep(5)
-
-        # Create a canvas with scrollbars
-        canvas = ctk.CTkCanvas(self.tab_view.tab(self.tab_names[1]), width=90, height=250)
-        canvas.grid(row=0, column=1, sticky="nsew", padx=0, pady=0)
-
-        # Create inner frame to hold chat labels (optional for better organization)
-        inner_frame = ctk.CTkFrame(canvas, width=90)
-        inner_frame.pack(fill="both", expand=True)
-
-        # Create vertical scrollbar
-        scrollbar = ctk.CTkScrollbar(self.tab_view.tab(self.tab_names[1]), command=canvas.yview)
-        scrollbar.grid(row=0, column=2, sticky="ns")
-
-        # Configure canvas scroll region
-        canvas.configure(scrollregion=canvas.bbox("all"), yscrollcommand=scrollbar.set)
-
-        reminder_stats_label = ctk.CTkLabel(inner_frame, text="Reminder Stats")
-        reminder_stats_label.pack()
-        self.widgets.append(reminder_stats_label)
-
-        reminder_stats_label = ctk.CTkLabel(inner_frame, text="List of chats with no response")
-        reminder_stats_label.pack()
-        self.widgets.append(reminder_stats_label)
-
-        row = 0
-        for chat in data:
-            chat_label = ctk.CTkLabel(inner_frame, text=f"{chat}", underline=True)
-            chat_label.pack(pady=10, padx=10)
-            self.widgets.append(chat_label)
-
-            chat_label.bind("<Button-1>", lambda e: webbrowser.open(chat))  # Bind click event with lambda
-
-            row += 1
+    # def fetch_unanswered_chats(self, data):
+    #
+    #     time.sleep(5)
+    #
+    #     # Create a canvas with scrollbars
+    #     canvas = ctk.CTkCanvas(self.tab_view.tab(self.tab_names[1]), width=90, height=250)
+    #     canvas.grid(row=0, column=1, sticky="nsew", padx=0, pady=0)
+    #
+    #     # Create inner frame to hold chat labels (optional for better organization)
+    #     inner_frame = ctk.CTkFrame(canvas, width=90)
+    #     inner_frame.pack(fill="both", expand=True)
+    #
+    #     # Create vertical scrollbar
+    #     scrollbar = ctk.CTkScrollbar(self.tab_view.tab(self.tab_names[1]), command=canvas.yview)
+    #     scrollbar.grid(row=0, column=2, sticky="ns")
+    #
+    #     # Configure canvas scroll region
+    #     canvas.configure(scrollregion=canvas.bbox("all"), yscrollcommand=scrollbar.set)
+    #
+    #     reminder_stats_label = ctk.CTkLabel(inner_frame, text="Reminder Stats")
+    #     reminder_stats_label.pack()
+    #     self.widgets.append(reminder_stats_label)
+    #
+    #     reminder_stats_label = ctk.CTkLabel(inner_frame, text="List of chats with no response")
+    #     reminder_stats_label.pack()
+    #     self.widgets.append(reminder_stats_label)
+    #
+    #     row = 0
+    #     for chat in data:
+    #         chat_label = ctk.CTkLabel(inner_frame, text=f"{chat}", underline=True)
+    #         chat_label.pack(pady=10, padx=10)
+    #         self.widgets.append(chat_label)
+    #
+    #         chat_label.bind("<Button-1>", lambda e: webbrowser.open(chat))  # Bind click event with lambda
+    #
+    #         row += 1

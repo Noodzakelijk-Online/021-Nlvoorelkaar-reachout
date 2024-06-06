@@ -40,3 +40,7 @@ class ServiceManagerInterface(ABC):
     def get_unanswered_chats(self, reminder_frequency):
         pass
 
+
+    def stop_reminder_service(self):
+        pass
+

@@ -1,6 +1,6 @@
 import csv
 import time
-from datetime import datetime
+from datetime import datetime, date
 from random import random, randint
 from typing import Optional
 import logging
@@ -9,7 +9,7 @@ from config.settings import headers
 from controllers.logincontroller import LoginController
 from controllers.logincontrollerinterface import LoginControllerInterface
 from models.sessionmanager import SessionManager
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, PageElement
 
 from models.stringlist import StringLists
 
@@ -20,6 +20,7 @@ class ReminderService:
         self.username = None
         self.password = None
         self.notifier = None
+        self.stopped = False
         self.loginController = loginController if loginController else LoginController()
 
     def start_reminder_service(self, notifier, reminder_frequency: Optional[str] = None,
@@ -43,14 +44,11 @@ class ReminderService:
         chats_with_no_response = self.get_unanswered_chats(reminder_frequency)
 
         if chats_with_no_response:
-            notifier.notify_unanswered_chats(chats_with_no_response)
+
             if reminder_message:
                 self.csv_handler(chats_with_no_response, reminder_frequency, reminder_message)
             else:
                 self.csv_handler(chats_with_no_response, reminder_frequency)
-
-        else:
-            notifier.notify_unanswered_chats(["No unanswered chats found"])
 
     def get_all_contacted_names(self) -> StringLists | bool:
 
@@ -99,13 +97,13 @@ class ReminderService:
 
             param: str_date: string date in format 'YYYY-MM-DD'
 
-            return: bool: True if the last reminder was sent more than specified frequency ago or more, False otherwise
+            return: bool: True if the last reminder was sent more than specified frequency ago, False otherwise
         """
 
         today = datetime.now()
         last_check = datetime.strptime(str_date, '%Y-%m-%d')
         delta = today - last_check
-        return delta.days >= frequency
+        return delta.days >= int(frequency)
 
     def construct_message(self, chat_url: str):
         """
@@ -168,7 +166,7 @@ class ReminderService:
                     }
 
                     # sleep between 30 and 75 seconds
-                    # time.sleep(randint(45, 75))
+                    time.sleep(randint(45, 75))
                     # response = SessionManager.get_session().post(chat_url, data=data, headers=headers)
                     # if response.status_code == 200:
                     print(f'Reminder sent to {chat_url}', "Text: ", message)
@@ -189,18 +187,33 @@ class ReminderService:
             updated_rows = []
 
             for chat_url in chats_with_no_response:
+
+                if self.stopped:
+                    return
+
                 chat_exists = False
                 for i, row in enumerate(rows_in_file):
                     if len(row) > 0 and row[0] == chat_url:
                         chat_exists = True
-                        if self.check_with_frequency(row[1], reminder_frequency) and int(row[2]) <= 4:
+                        today = date.today()
+                        twelve_months_ago = today.replace(year=today.year - 1)
+                        last_contact_date = datetime.strptime(row[1], '%Y-%m-%d').date()
+                        if self.check_with_frequency(row[1], reminder_frequency) and int(row[2]) < 4:
                             rows_in_file[i] = [chat_url, datetime.now().strftime('%Y-%m-%d'), str(int(row[2]) + 1)]
                             self.send_reminder(chat_url, reminder_message)
                             print(f"Reminder sent to {chat_url}")
-                        elif self.check_with_frequency(row[1], reminder_frequency) and int(row[2]) > 4:
+                        elif self.check_with_frequency(row[1], reminder_frequency) and int(
+                                row[2]) == 4  and not last_contact_date <= twelve_months_ago:
                             print(f"Chat {chat_url} has been banned to send more reminders")
                         elif not self.check_with_frequency(row[1], reminder_frequency):
                             print(f"Message is not older than {reminder_frequency} days for {chat_url}")
+                        elif last_contact_date <= twelve_months_ago and int(row[2]) == 4:
+                            rows_in_file[i] = [chat_url, datetime.now().strftime('%Y-%m-%d'), str(5)]
+                            new_row = [chat_url, datetime.now().strftime('%Y-%m-%d'), '0']
+                            updated_rows.append(new_row)
+                            self.send_reminder(chat_url, reminder_message)
+                            print(f"New help request after 12 months for {chat_url}")
+
 
                 if not chat_exists:
                     new_row = [chat_url, datetime.now().strftime('%Y-%m-%d'), '0']
@@ -255,11 +268,9 @@ class ReminderService:
                                 message_authors = []
                                 for message_meta in message_metas:
                                     author = message_meta.text.split(' ')[0]
-                                    if author in volunteer_names:
-                                        if not self.check_last_message_date(message_meta, 60):
-                                            message_authors.append(author)
-                                        else:
-                                            pass
+                                    if author in volunteer_names and not self.check_60_days(message_meta):
+                                        message_authors.append(author)
+
                                 if len(message_authors) == 0:
                                     chats_with_no_response.add(chat_url)
 
@@ -331,10 +342,8 @@ class ReminderService:
         """
 
         try:
-            if len(message_metas) == 1:
-                last_message_date = message_metas.text[-16:-6:1]
-            else:
-                last_message_date = message_metas[-1].text[-16:-6:1]
+
+            last_message_date = message_metas[-1].text[-16:-6:1]
 
             today = datetime.now()
             last_message_date = datetime.strptime(last_message_date, '%d.%m.%Y')
@@ -356,3 +365,30 @@ class ReminderService:
             reader = csv.reader(file)
             for row in reader:
                 return row[0], row[1]
+
+    def check_60_days(self, message_meta: PageElement):
+        """
+            Check if the last message on the page was sent more than 60 days ago
+
+            param: message_meta: string meta of the message
+
+            return: bool: True if the last message was sent more than 60 days ago, False otherwise
+        """
+        try:
+            last_message_date = message_meta.text[-16:-6:1]
+
+            today = datetime.now()
+            last_message_date = datetime.strptime(last_message_date, '%d.%m.%Y')
+
+            delta = today - last_message_date
+
+            return delta.days >= 60
+        except Exception as e:
+            print(f'Error while checking last message date: {str(e)}')
+            return False
+
+    def stop_reminder_service(self):
+        """
+        Stop the reminder service
+        """
+        self.stopped = True

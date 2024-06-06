@@ -151,7 +151,7 @@ class ServiceManager(ServiceManagerInterface):
         Start the reminder service.
         """
         print('Start reminder service from service manager')
-        self.reminder_service.start_reminder_service(self,  reminder_frequency, custom_reminder_message)
+        self.reminder_service.start_reminder_service(self, reminder_frequency, custom_reminder_message)
 
     def get_unanswered_chats(self, reminder_frequency):
         """
@@ -166,9 +166,8 @@ class ServiceManager(ServiceManagerInterface):
         for observer in self.__observers:
             observer.notify('notify_unanswered_chats', data)
 
-
-
-
-
-
-
+    def stop_reminder_service(self):
+        """
+        Stop the reminder service.
+        """
+        self.reminder_service.stop_reminder_service()
