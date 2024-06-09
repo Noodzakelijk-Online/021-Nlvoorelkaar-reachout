@@ -1,6 +1,6 @@
 import os
 
-from Utils.LoggingManager.loggingmanager import LogginManager
+from utils.logging_manager.loggingmanager import LogginManager
 from routing.windowsmanager import WindowManager
 import customtkinter as ctk
 from view.windowsmanagerconfig import WindowsManagerConfig

@@ -2,7 +2,7 @@ import logging
 import random
 import time
 from typing import Optional, List
-from Utils.CsvUtil.csv_util import contact_date_to_csv, pre_send_message_check
+from utils.csv_util.csv_util import contact_date_to_csv, pre_send_message_check
 
 from config.settings import headers, url_volunteer, minimum_time, maximum_time, url_base
 from controllers.logincontroller import LoginController

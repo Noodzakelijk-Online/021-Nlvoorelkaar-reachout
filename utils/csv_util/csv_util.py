@@ -1,4 +1,3 @@
-
 import csv
 import pathlib
 import sys
@@ -49,8 +48,6 @@ def contact_date_to_csv(volunteer_id: str):
             writer.writerows(rows)  # Write updated list with new row
 
 
-
-
 def pre_send_message_check(volunteer_id: str):
     """
     Check if the message can be sent to the volunteer with the given volunteer_id.
@@ -73,16 +70,16 @@ def pre_send_message_check(volunteer_id: str):
                 last_contact_date = datetime.strptime(row[1], '%Y-%m-%d').date()
                 break  # Stop reading after finding the volunteer_id
 
-        if last_contact_date is None or last_contact_date <= six_months_ago and not check_if_volunteer_id_is_banned(volunteer_id):
+        if last_contact_date is None or last_contact_date <= six_months_ago and not check_if_volunteer_id_is_banned(
+                volunteer_id):
             print(f"Sending message to volunteer with id {volunteer_id}")
             return True
-        elif check_if_volunteer_id_is_banned(volunteer_id):
+        elif not check_if_volunteer_id_is_banned(volunteer_id):
             print(f"Cannot send message to volunteer with id {volunteer_id}: Volunteer is banned")
             return False
         else:
             print(f"Cannot send message to volunteer with id {volunteer_id}: Last contact date is {last_contact_date}")
             return False
-
 
 
 def check_if_volunteer_id_is_banned(volunteer_id: str):
@@ -91,7 +88,7 @@ def check_if_volunteer_id_is_banned(volunteer_id: str):
 
     :param volunteer_id: The id of the volunteer.
 
-    :return: True if the volunteer is banned, False if he was banned more than 12 months ago or if he is not banned.
+    :return: False if the volunteer is banned, True if he was banned more than 12 months ago or if he is not banned.
     """
     today = date.today()
     twelve_months_ago = today.replace(year=today.year - 1)
@@ -102,9 +99,7 @@ def check_if_volunteer_id_is_banned(volunteer_id: str):
             if len(row) > 0 and row[0].split('/')[-1] == volunteer_id and int(row[2]) > 4:
                 last_contact_date = datetime.strptime(row[1], '%Y-%m-%d').date()
                 return last_contact_date <= twelve_months_ago
-
-            else:
-                return False
     return False
+
 
 

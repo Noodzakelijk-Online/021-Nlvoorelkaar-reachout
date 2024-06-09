@@ -1,8 +1,13 @@
 import csv
+
+from googleapiclient.errors import HttpError
+
+from google_drive.google_api_services import GoogleDriveReminderManager
 import time
 from datetime import datetime, date
-from random import random, randint
+from dateutil.relativedelta import relativedelta
 from typing import Optional
+import io
 import logging
 
 from config.settings import headers
@@ -22,20 +27,21 @@ class ReminderService:
         self.notifier = None
         self.stopped = False
         self.loginController = loginController if loginController else LoginController()
+        self.google_drive_manager = GoogleDriveReminderManager()
 
     def start_reminder_service(self, notifier, reminder_frequency: Optional[str] = None,
                                reminder_message: Optional[str] = None):
 
         if reminder_frequency and reminder_message:
-            self.write_frequency_data(reminder_frequency, reminder_message)
+            self.google_drive_manager.write_frequency_data(reminder_frequency, reminder_message)
         elif not reminder_frequency and not reminder_message:
-            reminder_frequency, reminder_message = self.read_frequency_data()
+            reminder_frequency, reminder_message = self.google_drive_manager.read_frequency_data()
 
         elif not reminder_message:
-            reminder_message = self.read_frequency_data()[1] or None
+            reminder_message = self.google_drive_manager.read_frequency_data()[1] or None
 
         elif not reminder_frequency:
-            reminder_frequency = self.read_frequency_data()[0] or 3
+            reminder_frequency = self.google_drive_manager.read_frequency_data()[0] or 3
 
         """
             Start the reminder service
@@ -166,7 +172,7 @@ class ReminderService:
                     }
 
                     # sleep between 30 and 75 seconds
-                    time.sleep(randint(45, 75))
+                    # time.sleep(randint(45, 75))
                     # response = SessionManager.get_session().post(chat_url, data=data, headers=headers)
                     # if response.status_code == 200:
                     print(f'Reminder sent to {chat_url}', "Text: ", message)
@@ -179,57 +185,79 @@ class ReminderService:
         if not chats_with_no_response:
             return
 
-        with open('chats_no_response.csv', 'r+', newline='') as file:
-            reader = csv.reader(file)
-            writer = csv.writer(file)
+        # Ensure the Google Drive file ID is available
+        if not self.google_drive_manager.file_id:
+            print("Google Drive file ID not available.")
+            return
 
+        file_id = self.google_drive_manager.find_id_by_name("chats_no_response.csv")
+        if file_id:
+
+            try:
+                file_content = self.google_drive_manager.download_file_content(file_id)
+            except HttpError as error:
+                print(f"An error occurred while downloading the file: {error}")
+                return
+        else:
+            file_content = None
+
+        # Read the CSV content
+        rows_in_file = []
+        if file_content:
+            file_stream = io.StringIO(file_content.decode('utf-8'))
+            reader = csv.reader(file_stream)
             rows_in_file = list(reader)
-            updated_rows = []
+            print("Rows in file: ", rows_in_file)
 
-            for chat_url in chats_with_no_response:
+        updated_rows = []
+        today = date.today()
+        six_months_ago = today - relativedelta(months=6)
 
-                if self.stopped:
-                    return
+        print("Chats with no response: ", chats_with_no_response)
+        for chat_url in chats_with_no_response:
+            chat_exists = False
+            for i, row in enumerate(rows_in_file):
+                if len(row) > 0 and row[0] == chat_url:
+                    chat_exists = True
+                    last_contact_date = datetime.strptime(row[1], '%Y-%m-%d').date()
+                    if self.check_with_frequency(row[1], reminder_frequency) and int(row[2]) < 4:
+                        rows_in_file[i] = [chat_url, datetime.now().strftime('%Y-%m-%d'), str(int(row[2]) + 1)]
+                        self.send_reminder(chat_url, reminder_message)
+                        print(f"Reminder sent to {chat_url}")
+                    elif self.check_with_frequency(row[1], reminder_frequency) and int(
+                            row[2]) == 4 and not last_contact_date <= six_months_ago:
+                        print(f"Chat {chat_url} has been banned to send more reminders")
+                    elif not self.check_with_frequency(row[1], reminder_frequency):
+                        print(f"Message is not older than {reminder_frequency} days for {chat_url}")
+                    elif last_contact_date <= six_months_ago and int(row[2]) == 4:
+                        rows_in_file[i] = [chat_url, datetime.now().strftime('%Y-%m-%d'), str(5)]
+                        new_row = [chat_url, datetime.now().strftime('%Y-%m-%d'), '0']
+                        updated_rows.append(new_row)
+                        self.send_reminder(chat_url, reminder_message)
+                        print(f"New help request after 12 months for {chat_url}")
 
-                chat_exists = False
-                for i, row in enumerate(rows_in_file):
-                    if len(row) > 0 and row[0] == chat_url:
-                        chat_exists = True
-                        today = date.today()
-                        twelve_months_ago = today.replace(year=today.year - 1)
-                        last_contact_date = datetime.strptime(row[1], '%Y-%m-%d').date()
-                        if self.check_with_frequency(row[1], reminder_frequency) and int(row[2]) < 4:
-                            rows_in_file[i] = [chat_url, datetime.now().strftime('%Y-%m-%d'), str(int(row[2]) + 1)]
-                            self.send_reminder(chat_url, reminder_message)
-                            print(f"Reminder sent to {chat_url}")
-                        elif self.check_with_frequency(row[1], reminder_frequency) and int(
-                                row[2]) == 4  and not last_contact_date <= twelve_months_ago:
-                            print(f"Chat {chat_url} has been banned to send more reminders")
-                        elif not self.check_with_frequency(row[1], reminder_frequency):
-                            print(f"Message is not older than {reminder_frequency} days for {chat_url}")
-                        elif last_contact_date <= twelve_months_ago and int(row[2]) == 4:
-                            rows_in_file[i] = [chat_url, datetime.now().strftime('%Y-%m-%d'), str(5)]
-                            new_row = [chat_url, datetime.now().strftime('%Y-%m-%d'), '0']
-                            updated_rows.append(new_row)
-                            self.send_reminder(chat_url, reminder_message)
-                            print(f"New help request after 12 months for {chat_url}")
+            if not chat_exists:
+                new_row = [chat_url, datetime.now().strftime('%Y-%m-%d'), '0']
+                updated_rows.append(new_row)
+                self.send_reminder(chat_url, reminder_message)
+                print(f"Sent message to {chat_url}")
 
+        # Combine updated rows with existing ones, removing duplicates
+        unique_rows = {tuple(row) for row in updated_rows + rows_in_file}
+        print("Unique rows: ", unique_rows)
 
-                if not chat_exists:
-                    new_row = [chat_url, datetime.now().strftime('%Y-%m-%d'), '0']
-                    updated_rows.append(new_row)
-                    self.send_reminder(chat_url, reminder_message)
-                    print(f"Sent message to {chat_url}")
+        # Write the updated CSV content to a string buffer
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerows(unique_rows)
+        output.seek(0)
 
-            # Remove old rows from updated rows
-            updated_rows = [row for row in updated_rows if row not in rows_in_file]
-
-            # Combine updated rows with existing rows
-            updated_rows.extend(rows_in_file)
-
-            file.seek(0)
-            writer.writerows(updated_rows)
-            file.truncate()
+        # Upload the updated file to Google Drive
+        try:
+            self.google_drive_manager.upload_file_content(output.getvalue().encode('utf-8'), file_id, "chats_no_response.csv")
+            print("File updated successfully on Google Drive.")
+        except HttpError as error:
+            print(f"An error occurred while uploading the file: {error}")
 
     def get_unanswered_chats(self, reminder_frequency: int):
 
@@ -355,16 +383,16 @@ class ReminderService:
             print(f'Error while checking last message date: {str(e)}')
             return False
 
-    def write_frequency_data(self, reminder_frequency, reminder_message):
-        with open('reminder_data.csv', 'w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerow([reminder_frequency, reminder_message])
-
-    def read_frequency_data(self):
-        with open('reminder_data.csv', 'r', newline='') as file:
-            reader = csv.reader(file)
-            for row in reader:
-                return row[0], row[1]
+    # def write_frequency_data(self, reminder_frequency, reminder_message):
+    #     with open('reminder_data.csv', 'w', newline='') as file:
+    #         writer = csv.writer(file)
+    #         writer.writerow([reminder_frequency, reminder_message])
+    #
+    # def read_frequency_data(self):
+    #     with open('reminder_data.csv', 'r', newline='') as file:
+    #         reader = csv.reader(file)
+    #         for row in reader:
+    #             return row[0], row[1]
 
     def check_60_days(self, message_meta: PageElement):
         """
