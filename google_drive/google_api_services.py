@@ -1,5 +1,6 @@
 import os
 import csv
+import time
 from datetime import datetime, date
 from typing import Optional
 from google.auth.transport.requests import Request
@@ -41,12 +42,28 @@ class GoogleDriveReminderManager:
                 token.write(creds.to_json())
 
         try:
-            service = build("drive", "v3", credentials=creds)
+            service = build("drive", "v3", cache_discovery=False, credentials=creds)
             self.service = service
             print("Google Drive service setup successfully")
 
-        except HttpError as error:
-            print("An error occurred: %s" % error)
+            files = ["contacts_date.csv", "reminder_data.csv", "chats_no_response.csv"]
+            for file in files:
+                try:
+                    existing_file = self.find_file_by_name(file)
+                    if existing_file:
+                        print(f"File {file} exists")
+                    else:
+                        file_metadata = {"name": file}
+                        file = self.service.files().create(body=file_metadata, fields="id").execute()
+                        time.sleep(1)
+                        print(f"File {file} created")
+                except HttpError as error:
+                    print("An error occurred: %s" % error)
+
+        except Exception as e:
+            print("An error occurred: %s" % e)
+
+
 
     def find_file_by_name(self, file_name):
         results = self.service.files().list(q=f"name='{file_name}'",

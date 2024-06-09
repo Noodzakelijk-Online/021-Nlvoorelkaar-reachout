@@ -2,6 +2,8 @@ import logging
 import random
 import time
 from typing import Optional, List
+
+from google_drive.google_api_services import GoogleDriveReminderManager
 from utils.csv_util.csv_util import contact_date_to_csv, pre_send_message_check
 
 from config.settings import headers, url_volunteer, minimum_time, maximum_time, url_base
@@ -23,6 +25,7 @@ class MessagingService:
         self.notifier = None
         self.delay_to_start_sending = random.uniform(10.141516, 29.141516)
         self.loginController = loginController if loginController else LoginController()
+        self.google_drive_manager = GoogleDriveReminderManager()
 
     def send_messages(self, notifier, username: str, password: str, message: str, phoneNumber: str,
                       recipients: List[str]) -> None:
@@ -37,11 +40,11 @@ class MessagingService:
         self.notifier.notify_starting_messaging(self.delay_to_start_sending)
         time.sleep(self.delay_to_start_sending)
         for recipient in self.recipients:
-            if pre_send_message_check(recipient):
+            if pre_send_message_check(recipient, self.google_drive_manager):
                 if self.__send_message(recipient):
                     time.sleep(1)
                     if self.check_if_message_was_sent(recipient):
-                        contact_date_to_csv(recipient)
+                        contact_date_to_csv(recipient, self.google_drive_manager)
                     else:
                         print(f"Failed to send message to {recipient}")
 
@@ -72,6 +75,8 @@ class MessagingService:
                 logging.error(f'Error while sending message to volunteer with id {volunteer_id}: '
                               f'Could not get message page')
                 return False
+
+            print(f'Message sent to volunteer with id {volunteer_id}')
             response = SessionManager.get_session().post(url, data=data, headers=headers)
             if response.status_code != 200:
                 time.sleep(1)
