@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Optional
 
 
 class ServiceManagerInterface(ABC):
@@ -34,7 +34,7 @@ class ServiceManagerInterface(ABC):
     def send_messages(self, username, password, param, param1, data):
         pass
 
-    def start_reminder_service(self, reminder_frequency, custom_reminder_message):
+    def start_reminder_service(self, reminder_frequency: Optional[int] = None , custom_reminder_message: Optional[str] = None):
         pass
 
     def get_unanswered_chats(self, reminder_frequency):

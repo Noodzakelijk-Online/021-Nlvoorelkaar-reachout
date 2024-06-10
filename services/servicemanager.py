@@ -1,6 +1,8 @@
 import threading
-from typing import List
+import time
+from typing import List, Optional
 
+from controllers.logincontroller import LoginController
 from services.locationautocompleteservice import LocationAutocompleteService
 from services.messagingservice import MessagingService
 from services.reminderservice import ReminderService
@@ -22,6 +24,8 @@ class ServiceManager(ServiceManagerInterface):
         self.location_autocomplete_service = LocationAutocompleteService()
         self.messaging_service = MessagingService()
         self.reminder_service = ReminderService()
+
+
 
     def subscribe(self, observer):
         """
@@ -146,12 +150,13 @@ class ServiceManager(ServiceManagerInterface):
         for observer in self.__observers:
             observer.notify('notify_progress_message_sending', data)
 
-    def start_reminder_service(self, reminder_frequency, custom_reminder_message):
+    def start_reminder_service(self, reminder_frequency: Optional[int] = None, custom_reminder_message: Optional[str] = None):
         """
         Start the reminder service.
         """
         print('Start reminder service from service manager')
-        self.reminder_service.start_reminder_service(self, reminder_frequency, custom_reminder_message)
+        time.sleep(5)
+        self.reminder_service.start_reminder_service(reminder_frequency, custom_reminder_message)
 
     def get_unanswered_chats(self, reminder_frequency):
         """

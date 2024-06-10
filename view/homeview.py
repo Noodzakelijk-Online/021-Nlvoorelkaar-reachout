@@ -43,6 +43,8 @@ class HomeView(BaseView):
         self.option_menu = None
         self.location_ids_types = {}
 
+
+
     def configure_tab_view(self) -> None:
         self.tab_view.pack(fill="both", expand=True)
         self.tab_view.add("Send Messages")
@@ -438,11 +440,12 @@ class HomeView(BaseView):
         else:
             self.send_button.configure(state="disabled")
 
-    def start_reminder_service(self, reminder_frequency, custom_reminder_message):
+    def start_reminder_service(self, reminder_frequency: Optional[int] = None, custom_reminder_message: Optional[str] = None):
 
         self.service_manager.start_reminder_service(reminder_frequency, custom_reminder_message)
 
     def create_reminder_tab(self):
+
         reminder_frame = ctk.CTkFrame(self.tab_view.tab(self.tab_names[1]))
         reminder_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         self.widgets.append(reminder_frame)
@@ -492,6 +495,7 @@ class HomeView(BaseView):
                                                       command=lambda: self.start_reminder_service(
                                                           set_reminder_frequency(), set_custom_reminder_message()
                                                       ))
+
         start_reminder_service_button.grid(row=3, column=0, sticky="nsew", pady=(10, 0))
 
         start_reminder_service_button.place(relx=0.3, rely=0.2, anchor="center")
@@ -504,6 +508,10 @@ class HomeView(BaseView):
         self.widgets.append(stop_reminder_service_button)
 
         stop_reminder_service_button.place(relx=0.3, rely=0.3, anchor="center")
+
+
+
+
 
     def stop_reminder_service(self):
         print("Stopping reminder service")

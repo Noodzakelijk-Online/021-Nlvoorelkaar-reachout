@@ -35,7 +35,6 @@ class MessagingService:
         self.message = message
         self.phoneNumber = phoneNumber
         self.recipients = recipients
-        self.loginController.logout()
         current_recipient = 0
         self.notifier.notify_starting_messaging(self.delay_to_start_sending)
         time.sleep(self.delay_to_start_sending)
@@ -57,7 +56,6 @@ class MessagingService:
                 time.sleep(random.uniform(minimum_time, maximum_time))
 
     def __send_message(self, volunteer_id: str) -> bool:
-
         url = f'{url_volunteer}{volunteer_id}?showMessage=1'
         try:
             response = SessionManager.get_session().get(url, headers=headers)
@@ -75,18 +73,17 @@ class MessagingService:
                 logging.error(f'Error while sending message to volunteer with id {volunteer_id}: '
                               f'Could not get message page')
                 return False
-
-            print(f'Message sent to volunteer with id {volunteer_id}')
             response = SessionManager.get_session().post(url, data=data, headers=headers)
             if response.status_code != 200:
                 time.sleep(1)
                 logging.error(f'Error while sending message to volunteer with id {volunteer_id}: '
-                                f'Server responded with status code {response.status_code}')
-                print(f'Error while sending message to volunteer with id {volunteer_id}: '
                               f'Server responded with status code {response.status_code}')
+                print(f'Error while sending message to volunteer with id {volunteer_id}: '
+                      f'Server responded with status code {response.status_code}')
                 return False
 
-            print(f'Message sent to volunteer with id {volunteer_id}' + f' Server responded with status code {response.status_code}')
+            print(
+                f'Message sent to volunteer with id {volunteer_id}' + f' Server responded with status code {response.status_code}')
             return True
 
         except Exception as e:

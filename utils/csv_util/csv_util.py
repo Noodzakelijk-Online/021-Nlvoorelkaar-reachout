@@ -42,14 +42,14 @@ def contact_date_to_csv(volunteer_id: str, drive_manager: GoogleDriveReminderMan
         file_content = io.StringIO()
         writer = csv.writer(file_content)
         writer.writerows(rows)
-        drive_manager.upload_file_content(file_content.getvalue().encode('utf-8'), "contacts_date.csv")
+        drive_manager.upload_file_content(file_content.getvalue().encode('utf-8'), file_id,"contacts_date.csv")
     if not updated:  # Here's the logic to check for new volunteer_id
         new_row = [volunteer_id, today.strftime('%Y-%m-%d')]
         rows.append(new_row)  # Add new row to the in-memory list
         file_content = io.StringIO()
         writer = csv.writer(file_content)
         writer.writerows(rows)  # Write updated list with new row
-        drive_manager.upload_file_content(file_content.getvalue().encode('utf-8'), "contacts_date.csv")
+        drive_manager.upload_file_content(file_content.getvalue().encode('utf-8'), file_id, "contacts_date.csv")
 
 
 
@@ -67,7 +67,6 @@ def pre_send_message_check(volunteer_id: str, drive_manager: GoogleDriveReminder
     today = date.today()
     six_months_ago = today - relativedelta(months=6)
     file_id = drive_manager.find_id_by_name("contacts_date.csv")
-    print(f"File id: {file_id}")
     file_content = drive_manager.download_file_content(file_id)
     rows = []
     if file_content:

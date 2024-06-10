@@ -7,6 +7,7 @@ from controllers.logindatacontrollerinterface import LoginDataControllerInterfac
 from controllers.logincontrollerinterface import LoginControllerInterface
 from controllers.logindatacontroller import LoginDataController
 from routing.windowsmanagerinterface import WindowManagerInterface
+from services.servicemanager import ServiceManager
 from view.baseview import BaseView
 from view.utilsgui import center_window
 
@@ -22,8 +23,9 @@ class LoginView(BaseView):
         self.next_window = next_window
         self.login_data_controller = LoginDataController() if login_data_controller is None else login_data_controller
         self.widgets = []
-        self.username = None
-        self.password = None
+        self.saved_username, self.saved_password = self.login_data_controller.load_login_data()
+        self.username = self.saved_username if self.saved_username is not None else None
+        self.password = self.saved_password if self.saved_password is not None else None
         self.error_label = None
         self.login_button = None
         self.remember_me = None
@@ -114,13 +116,13 @@ class LoginView(BaseView):
         self.remember_me_checkbox = self.create_remember_me_checkbox()
         self.error_label = self.create_error_label()
         self.login_button = self.create_login_button()
-        saved_username, saved_password = self.login_data_controller.load_login_data()
-        if saved_username is not None and saved_password is not None:
-            self.username.set(saved_username)
-            self.password.set(saved_password)
+
+        if self.saved_username is not None and self.saved_password is not None:
+            self.username.set(self.saved_username)
+            self.password.set(self.saved_password)
             self.remember_me_checkbox.select()
-            # added this for automatic login if the login data is saved
             self.login()
+
         center_window(self.root_window)
 
     def login(self) -> None:
