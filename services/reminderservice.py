@@ -29,7 +29,7 @@ class ReminderService:
         self.loginController = loginController if loginController else LoginController()
         self.google_drive_manager = GoogleDriveReminderManager()
 
-    def start_reminder_service(self, reminder_frequency: Optional[str] = None,
+    def start_reminder_service(self, reminder_frequency: Optional[str] = 3,
                                reminder_message: Optional[str] = None):
 
         if reminder_frequency and reminder_message:
@@ -41,15 +41,22 @@ class ReminderService:
             reminder_message = self.google_drive_manager.read_frequency_data()[1] or None
 
         elif not reminder_frequency and reminder_message:
-            reminder_frequency = self.google_drive_manager.read_frequency_data()[0] or 3
+            reminder_frequency = self.google_drive_manager.read_frequency_data()[0]
 
         """
             Start the reminder service
         """
         print('Reminder frequency: ', reminder_frequency)
         print('Reminder message: ', reminder_message)
-        chats_with_no_response = self.get_unanswered_chats(reminder_frequency)
-        print("Chats with no response: ", chats_with_no_response)
+
+        chats_with_no_response = None
+        if reminder_frequency:
+            chats_with_no_response = self.get_unanswered_chats(reminder_frequency)
+        if not reminder_frequency:
+            reminder_frequency = 3
+            chats_with_no_response = self.get_unanswered_chats(reminder_frequency)
+
+
         if chats_with_no_response:
 
 
@@ -173,16 +180,16 @@ class ReminderService:
                         'message[loaded]': message_loaded
                     }
 
-                    # time.sleep(randint(45, 75))
-                    # response = SessionManager.get_session().post(chat_url, data=data, headers=headers)
-                    # if response.status_code == 200:
-                    print(f'Reminder sent to {chat_url}', "Text: ", message)
-                    return True
+                    time.sleep(randint(45, 75))
+                    response = SessionManager.get_session().post(chat_url, data=data, headers=headers)
+                    if response.status_code == 200:
+                        print(f'Reminder sent to {chat_url}', "Text: ", message)
+                        return True
             except Exception as e:
                 logging.error(f'Error while sending reminder to chat with url {chat_url}: {str(e)}')
                 return False
 
-    def csv_handler(self, chats_with_no_response, reminder_frequency: str, reminder_message: Optional[str] = None):
+    def csv_handler(self, chats_with_no_response, reminder_frequency: int, reminder_message: Optional[str] = None):
         if not chats_with_no_response:
             print("No chats with no response")
             return
@@ -209,7 +216,6 @@ class ReminderService:
         today = date.today()
         six_months_ago = today - relativedelta(months=6)
 
-        print("Chats with no response: ", chats_with_no_response)
         for chat_url in chats_with_no_response:
             chat_exists = False
             for i, row in enumerate(rows_in_file):
@@ -284,10 +290,9 @@ class ReminderService:
 
         try:
             volunteer_names = names_urls_object.names
-            print("VOLUNTEER NAMES: ", volunteer_names)
+
 
             urls = names_urls_object.pages
-            print("URLS: ", urls)
 
             for url in urls:
                 response = SessionManager.get_session().get(url, headers=headers)

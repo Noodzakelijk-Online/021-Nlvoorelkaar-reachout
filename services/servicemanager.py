@@ -27,6 +27,7 @@ class ServiceManager(ServiceManagerInterface):
 
 
 
+
     def subscribe(self, observer):
         """
         Subscribe to the service manager.
@@ -155,7 +156,6 @@ class ServiceManager(ServiceManagerInterface):
         Start the reminder service.
         """
         print('Start reminder service from service manager')
-        time.sleep(5)
         self.reminder_service.start_reminder_service(reminder_frequency, custom_reminder_message)
 
     def get_unanswered_chats(self, reminder_frequency):

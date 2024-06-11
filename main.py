@@ -1,6 +1,6 @@
 import os
 
-from utils.logging_manager.loggingmanager import LogginManager
+from utils.logging_manager.loggingmanager import LoggingManager
 from routing.windowsmanager import WindowManager
 import customtkinter as ctk
 from view.windowsmanagerconfig import WindowsManagerConfig
@@ -12,7 +12,7 @@ def on_close():
 
 if __name__ == '__main__':
     try:
-        LogginManager().config()
+        LoggingManager().config()
 
         root_window = ctk.CTk()
 

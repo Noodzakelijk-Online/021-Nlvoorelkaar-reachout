@@ -2,7 +2,7 @@ import logging
 import os
 
 
-class LogginManager:
+class LoggingManager:
     def __init__(self, log_folder_name="logs"):
         self.log_folder_name = log_folder_name
 

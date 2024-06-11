@@ -42,6 +42,7 @@ class HomeView(BaseView):
         self.progress_bar = None
         self.option_menu = None
         self.location_ids_types = {}
+        self.service_manager.start_reminder_service()
 
 
 
@@ -62,6 +63,7 @@ class HomeView(BaseView):
         self.root_window.resizable(False, False)
 
     def load_screen(self):
+
         self.configure_window_style()
         self.configure_tab_view()
         self.create_categories_filter()
@@ -74,6 +76,7 @@ class HomeView(BaseView):
         x = (self.root_window.winfo_screenwidth() // 2) - (self.width // 2)
         y = (self.root_window.winfo_screenheight() // 2) - (self.height // 2)
         self.root_window.geometry('{}x{}+{}+{}'.format(self.width, self.height, x, y))
+
 
     def create_categories_filter(self):
         category_frame = ctk.CTkFrame(self.tab_view.tab(self.tab_names[0]))

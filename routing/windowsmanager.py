@@ -1,4 +1,5 @@
 from routing.windowsmanagerinterface import WindowManagerInterface
+from services.reminderservice import ReminderService
 
 
 class WindowManager(WindowManagerInterface):

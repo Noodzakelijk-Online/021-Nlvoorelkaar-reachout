@@ -141,6 +141,7 @@ class LoginView(BaseView):
             self.root_window.password = self.password.get()
             self.error_label.grid_remove()
             self.windows_manager.go_to_window(self.next_window)
+
         else:
             self.error_label.configure(text="Login failed, please try again.")
             self.error_label.grid()

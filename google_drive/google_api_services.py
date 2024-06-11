@@ -44,26 +44,24 @@ class GoogleDriveReminderManager:
         try:
             service = build("drive", "v3", cache_discovery=False, credentials=creds)
             self.service = service
-            print("Google Drive service setup successfully")
 
             files = ["contacts_date.csv", "reminder_data.csv", "chats_no_response.csv"]
             for file in files:
                 try:
                     existing_file = self.find_file_by_name(file)
                     if existing_file:
-                        print(f"File {file} exists")
+                        # print(f"File {file} exists")
+                        pass
                     else:
                         file_metadata = {"name": file}
                         file = self.service.files().create(body=file_metadata, fields="id").execute()
                         time.sleep(1)
-                        print(f"File {file} created")
+                        # print(f"File {file} created")
                 except HttpError as error:
                     print("An error occurred: %s" % error)
 
         except Exception as e:
             print("An error occurred: %s" % e)
-
-
 
     def find_file_by_name(self, file_name):
         results = self.service.files().list(q=f"name='{file_name}'",
@@ -107,7 +105,8 @@ class GoogleDriveReminderManager:
         if existing_file:
             print("File", drive_file_name, "already exists")
             self.file_id = existing_file.get("id")
-            response = self.service.files().update(fileId=self.file_id, media_body=media_body, body=file_metadata).execute()
+            response = self.service.files().update(fileId=self.file_id, media_body=media_body,
+                                                   body=file_metadata).execute()
         else:
             print("File", drive_file_name, "does not exist. Creating new file")
             response = self.service.files().create(body=file_metadata, media_body=media_body, fields="id").execute()
