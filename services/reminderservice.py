@@ -52,13 +52,13 @@ class ReminderService:
         chats_with_no_response = None
         if reminder_frequency:
             chats_with_no_response = self.get_unanswered_chats(reminder_frequency)
+            print(chats_with_no_response)
         if not reminder_frequency:
             reminder_frequency = 3
             chats_with_no_response = self.get_unanswered_chats(reminder_frequency)
-
+            print(chats_with_no_response)
 
         if chats_with_no_response:
-
 
             if reminder_message:
                 self.csv_handler(chats_with_no_response, reminder_frequency, reminder_message)
@@ -102,7 +102,7 @@ class ReminderService:
                 return result
 
         except Exception as e:
-            logging.error(f'Error while collecting contacted names: {str(e)}')
+            print(f'Error while collecting contacted names: {str(e)}')
             return False
 
     @staticmethod
@@ -226,7 +226,7 @@ class ReminderService:
                         rows_in_file[i] = [chat_url, datetime.now().strftime('%Y-%m-%d'), str(int(row[2]) + 1)]
                         reminder_msg = reminder_message if reminder_message else self.construct_message(chat_url)
                         self.send_reminder(chat_url, reminder_msg)
-                        print(f"Reminder sent to {chat_url}")
+
                     elif self.check_with_frequency(row[1], reminder_frequency) and int(
                             row[2]) == 4 and not last_contact_date <= six_months_ago:
                         print(f"Chat {chat_url} has been banned to send more reminders")
@@ -291,7 +291,6 @@ class ReminderService:
         try:
             volunteer_names = names_urls_object.names
 
-
             urls = names_urls_object.pages
 
             for url in urls:
@@ -332,7 +331,7 @@ class ReminderService:
                     logging.error(f'Error while checking unanswered messages: Could not get messages page')
                     return False
         except Exception as e:
-            logging.error(f'Error while checking unanswered messages: {str(e)}')
+            print(f'Error while checking unanswered messages: {str(e)}')
             return False
         return chats_with_no_response
 

@@ -1,5 +1,6 @@
 import math
 import random
+import threading
 import time
 import webbrowser
 from typing import Optional
@@ -42,9 +43,6 @@ class HomeView(BaseView):
         self.progress_bar = None
         self.option_menu = None
         self.location_ids_types = {}
-        self.service_manager.start_reminder_service()
-
-
 
     def configure_tab_view(self) -> None:
         self.tab_view.pack(fill="both", expand=True)
@@ -66,17 +64,16 @@ class HomeView(BaseView):
 
         self.configure_window_style()
         self.configure_tab_view()
+        self.create_reminder_tab()
         self.create_categories_filter()
         self.create_theme_filter()
         self.create_location_filter()
         self.create_box_get_volunteers()
         self.create_message_frame()
-        self.create_reminder_tab()
         self.create_logs_tab()
         x = (self.root_window.winfo_screenwidth() // 2) - (self.width // 2)
         y = (self.root_window.winfo_screenheight() // 2) - (self.height // 2)
         self.root_window.geometry('{}x{}+{}+{}'.format(self.width, self.height, x, y))
-
 
     def create_categories_filter(self):
         category_frame = ctk.CTkFrame(self.tab_view.tab(self.tab_names[0]))
@@ -443,7 +440,8 @@ class HomeView(BaseView):
         else:
             self.send_button.configure(state="disabled")
 
-    def start_reminder_service(self, reminder_frequency: Optional[int] = None, custom_reminder_message: Optional[str] = None):
+    def start_reminder_service(self, reminder_frequency: Optional[int] = None,
+                               custom_reminder_message: Optional[str] = None):
 
         self.service_manager.start_reminder_service(reminder_frequency, custom_reminder_message)
 
@@ -506,13 +504,14 @@ class HomeView(BaseView):
         self.widgets.append(start_reminder_service_button)
 
         stop_reminder_service_button = ctk.CTkButton(reminder_frame, text="Stop reminder service",
-                                                     command=self.stop_reminder_service)
+                                                     command=lambda: threading.Thread(
+                                                         target=self.start_reminder_service,
+                                                         args=(set_reminder_frequency(),
+                                                               set_custom_reminder_message())).start())
         stop_reminder_service_button.grid(row=3, column=2, sticky="nsew", pady=(10, 0))
         self.widgets.append(stop_reminder_service_button)
 
         stop_reminder_service_button.place(relx=0.3, rely=0.3, anchor="center")
-
-
 
 
 
@@ -546,10 +545,10 @@ class HomeView(BaseView):
         error_logs_frame.grid(row=0, column=1, padx=0, pady=0, sticky="nsew")  # Specify `sticky` for proper resizing
 
         # Add text labels directly to the scrollable frames
-        info_logs_label = ctk.CTkLabel(info_logs_frame, text="INFO LOGS", width=80)
+        info_logs_label = ctk.CTkLabel(info_logs_frame, text="INFO", width=80)
         info_logs_label.grid(row=0, column=0, pady=10, padx=10)
 
-        error_logs_label = ctk.CTkLabel(error_logs_frame, text="ERROR LOGS", width=80)
+        error_logs_label = ctk.CTkLabel(error_logs_frame, text="ERROR", width=80)
         error_logs_label.grid(row=0, column=0, pady=10, padx=10)
         self.widgets.append(info_logs_label)
 

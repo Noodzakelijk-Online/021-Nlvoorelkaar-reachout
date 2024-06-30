@@ -26,20 +26,21 @@ class GoogleDriveReminderManager:
         if os.path.exists("../../google_drive/token.json"):
             if Credentials.from_authorized_user_file("../../google_drive/token.json", SCOPES) is not None:
                 creds = Credentials.from_authorized_user_file("../../google_drive/token.json", SCOPES)
-            else:
-                print("Token file is empty")
 
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    "../../google_drive/credentials.json", SCOPES
-                )
-                creds = flow.run_local_server(port=0)
-            # Save the credentials for the next run
-            with open("../../google_drive/token.json", "w") as token:
-                token.write(creds.to_json())
+                # If there are no (valid) credentials available, prompt the user to log in.
+            if not self.creds or not self.creds.valid:
+                if self.creds and self.creds.expired and self.creds.refresh_token:
+                    try:
+                        self.creds.refresh(Request())
+                    except Exception as e:
+                        print(f"Failed to refresh token: {e}")
+                        self.creds = self.get_new_credentials()
+                else:
+                    self.creds = self.get_new_credentials()
+
+                # Save the credentials for the next run
+                with open("../../google_drive/token.json", "w") as token:
+                    token.write(self.creds.to_json())
 
         try:
             service = build("drive", "v3", cache_discovery=False, credentials=creds)
@@ -63,6 +64,10 @@ class GoogleDriveReminderManager:
         except Exception as e:
             print("An error occurred: %s" % e)
 
+    def get_new_credentials(self):
+        flow = InstalledAppFlow.from_client_secrets_file("../../google_drive/credentials.json", SCOPES)
+        creds = flow.run_local_server(port=0)
+        return creds
     def find_file_by_name(self, file_name):
         results = self.service.files().list(q=f"name='{file_name}'",
                                             spaces='drive',
