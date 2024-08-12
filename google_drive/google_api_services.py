@@ -34,20 +34,20 @@ class GoogleDriveReminderManager:
         self.setup()
 
     def setup(self):
-        creds = None
         if os.path.exists(f"{PATH}/token.json"):
             if Credentials.from_authorized_user_file(f"{PATH}/token.json", SCOPES) is not None:
-                creds = Credentials.from_authorized_user_file(f"{PATH}/token.json", SCOPES)
-
+                self.creds = Credentials.from_authorized_user_file(f"{PATH}/token.json", SCOPES)
+                print("CREDS", self.creds)
                 # If there are no (valid) credentials available, prompt the user to log in.
-            if not self.creds or not self.creds.valid:
                 if self.creds and self.creds.expired and self.creds.refresh_token:
                     try:
+                        print("PERFORMING REFRESH")
                         self.creds.refresh(Request())
                     except Exception as e:
                         print(f"Failed to refresh token: {e}")
                         self.creds = self.get_new_credentials()
-                else:
+                elif not self.creds:
+                    print("GETTING NEW CREDS")
                     self.creds = self.get_new_credentials()
 
                 # Save the credentials for the next run
@@ -55,7 +55,7 @@ class GoogleDriveReminderManager:
                     token.write(self.creds.to_json())
 
         try:
-            service = build("drive", "v3", cache_discovery=False, credentials=creds)
+            service = build("drive", "v3", cache_discovery=False, credentials=self.creds)
             self.service = service
 
             files = ["contacts_date.csv", "reminder_data.csv", "chats_no_response.csv"]
