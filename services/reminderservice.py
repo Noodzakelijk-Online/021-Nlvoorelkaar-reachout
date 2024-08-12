@@ -19,6 +19,9 @@ from bs4 import BeautifulSoup, PageElement
 from models.stringlist import StringLists
 
 
+
+
+
 class ReminderService:
     def __init__(self, loginController: Optional[LoginControllerInterface] = None):
         self.message = None
@@ -180,11 +183,12 @@ class ReminderService:
                         'message[loaded]': message_loaded
                     }
 
-                    time.sleep(randint(45, 75))
-                    response = SessionManager.get_session().post(chat_url, data=data, headers=headers)
-                    if response.status_code == 200:
-                        print(f'Reminder sent to {chat_url}', "Text: ", message)
-                        return True
+                    # time.sleep(randint(45, 75))
+                    # response = SessionManager.get_session().post(chat_url, data=data, headers=headers)
+
+                    # if response.status_code == 200:
+                    #     print(f'Reminder sent to {chat_url}', "Text: ", message)
+                    return True
             except Exception as e:
                 logging.error(f'Error while sending reminder to chat with url {chat_url}: {str(e)}')
                 return False

@@ -12,10 +12,22 @@ from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 import speedtab as st
 
 SCOPES = ["https://www.googleapis.com/auth/drive"]
-
+mode = "development"  # "development"
+PATH = "../../google_drive" if mode == "production" else "."
 
 class GoogleDriveReminderManager:
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super(GoogleDriveReminderManager, cls).__new__(cls, *args, **kwargs)
+            cls._instance._initialized = False
+        return cls._instance
+
     def __init__(self):
+        if self._initialized:
+            return
+        self._initialized = True
         self.creds = None
         self.service = None
         self.file_id = None
@@ -23,9 +35,9 @@ class GoogleDriveReminderManager:
 
     def setup(self):
         creds = None
-        if os.path.exists("../../google_drive/token.json"):
-            if Credentials.from_authorized_user_file("../../google_drive/token.json", SCOPES) is not None:
-                creds = Credentials.from_authorized_user_file("../../google_drive/token.json", SCOPES)
+        if os.path.exists(f"{PATH}/token.json"):
+            if Credentials.from_authorized_user_file(f"{PATH}/token.json", SCOPES) is not None:
+                creds = Credentials.from_authorized_user_file(f"{PATH}/token.json", SCOPES)
 
                 # If there are no (valid) credentials available, prompt the user to log in.
             if not self.creds or not self.creds.valid:
@@ -39,7 +51,7 @@ class GoogleDriveReminderManager:
                     self.creds = self.get_new_credentials()
 
                 # Save the credentials for the next run
-                with open("../../google_drive/token.json", "w") as token:
+                with open(f"{PATH}/token.json", "w") as token:
                     token.write(self.creds.to_json())
 
         try:
@@ -65,7 +77,7 @@ class GoogleDriveReminderManager:
             print("An error occurred: %s" % e)
 
     def get_new_credentials(self):
-        flow = InstalledAppFlow.from_client_secrets_file("../../google_drive/credentials.json", SCOPES)
+        flow = InstalledAppFlow.from_client_secrets_file(f"{PATH}/credentials.json", SCOPES)
         creds = flow.run_local_server(port=0)
         return creds
     def find_file_by_name(self, file_name):
@@ -166,11 +178,3 @@ class GoogleDriveReminderManager:
 
         return None, None
 
-
-def main():
-    st.create_token( "credentials.json", 'token.json')
-
-
-
-if __name__ == "__main__":
-    main()
