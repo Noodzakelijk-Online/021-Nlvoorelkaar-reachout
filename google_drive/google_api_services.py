@@ -15,6 +15,7 @@ SCOPES = ["https://www.googleapis.com/auth/drive"]
 mode = "development"  # "development"
 PATH = "../../google_drive" if mode == "production" else "."
 
+
 class GoogleDriveReminderManager:
     _instance = None
 
@@ -31,6 +32,7 @@ class GoogleDriveReminderManager:
         self.creds = None
         self.service = None
         self.file_id = None
+        self.folder_id = None
         self.setup()
 
     def setup(self):
@@ -38,7 +40,6 @@ class GoogleDriveReminderManager:
             if Credentials.from_authorized_user_file(f"{PATH}/token.json", SCOPES) is not None:
                 self.creds = Credentials.from_authorized_user_file(f"{PATH}/token.json", SCOPES)
                 print("CREDS", self.creds)
-                # If there are no (valid) credentials available, prompt the user to log in.
                 if self.creds and self.creds.expired and self.creds.refresh_token:
                     try:
                         print("PERFORMING REFRESH")
@@ -50,7 +51,6 @@ class GoogleDriveReminderManager:
                     print("GETTING NEW CREDS")
                     self.creds = self.get_new_credentials()
 
-                # Save the credentials for the next run
                 with open(f"{PATH}/token.json", "w") as token:
                     token.write(self.creds.to_json())
 
@@ -58,30 +58,52 @@ class GoogleDriveReminderManager:
             service = build("drive", "v3", cache_discovery=False, credentials=self.creds)
             self.service = service
 
-            files = ["contacts_date.csv", "reminder_data.csv", "chats_no_response.csv"]
+            folder_name = "nlvoorelkaar_data"
+
+            self.folder_id = self.get_folder_id_by_name(folder_name)
+            print("FOLDER ID", self.folder_id)
+
+            if not self.folder_id:
+                file_metadata = {
+                    'name': folder_name,
+                    'mimeType': 'application/vnd.google-apps.folder'
+                }
+                folder = self.service.files().create(body=file_metadata, fields='id').execute()
+                folder_id = folder.get('id')
+
+                self.folder_id = folder_id
+                print("FOLDER ID", self.folder_id)
+
+            files = ["contacts_date.csv", "reminder_data.csv", "chats_no_response.csv", "blacklisted_volunteers.csv"]
             for file in files:
                 try:
                     existing_file = self.find_file_by_name(file)
                     if existing_file:
-                        # print(f"File {file} exists")
                         pass
                     else:
-                        file_metadata = {"name": file}
-                        file = self.service.files().create(body=file_metadata, fields="id").execute()
+                        file_metadata = {"name": file, "parents": [self.folder_id]}
+                        self.service.files().create(body=file_metadata, fields="id").execute()
                         time.sleep(1)
-                        # print(f"File {file} created")
                 except HttpError as error:
                     print("An error occurred: %s" % error)
 
         except Exception as e:
             print("An error occurred: %s" % e)
 
-    def get_new_credentials(self):
-        flow = InstalledAppFlow.from_client_secrets_file(f"{PATH}/credentials.json", SCOPES)
-        creds = flow.run_local_server(port=0)
-        return creds
+    def get_folder_id_by_name(self, folder_name):
+        query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder'"
+        results = self.service.files().list(q=query, spaces='drive', fields="files(id, name)").execute()
+        items = results.get('files', [])
+        if items:
+            return items[0].get('id')
+        return None
+
     def find_file_by_name(self, file_name):
-        results = self.service.files().list(q=f"name='{file_name}'",
+        if not self.folder_id:
+            print(f"Folder ID is not set for {file_name}.")
+            return None
+        query = f"name='{file_name}' and '{self.folder_id}' in parents"
+        results = self.service.files().list(q=query,
                                             spaces='drive',
                                             fields="files(id, name)").execute()
         items = results.get('files', [])
@@ -90,8 +112,12 @@ class GoogleDriveReminderManager:
         else:
             return items[0]
 
-    def find_id_by_name(self, file_name):
-        results = self.service.files().list(q=f"name='{file_name}'",
+    def find_file_id_by_name(self, file_name):
+        if not self.folder_id:
+            print(f"Folder ID is not set for {file_name}.")
+            return None
+        query = f"name='{file_name}' and '{self.folder_id}' in parents"
+        results = self.service.files().list(q=query,
                                             spaces='drive',
                                             fields="files(id, name)").execute()
         items = results.get('files', [])
@@ -101,7 +127,10 @@ class GoogleDriveReminderManager:
             return items[0].get("id")
 
     def upload_file(self, local_file_path, drive_file_name):
-        file_metadata = {"name": drive_file_name}
+        file_metadata = {
+            "name": drive_file_name,
+            "parents": [self.folder_id]  # Specify the folder ID here
+        }
         media = MediaIoBaseUpload(open(local_file_path, "rb"), mimetype="text/csv")
 
         existing_file = self.find_file_by_name(drive_file_name)
@@ -116,16 +145,16 @@ class GoogleDriveReminderManager:
 
     def upload_file_content(self, file_content, file_id, drive_file_name):
         media_body = MediaIoBaseUpload(io.BytesIO(file_content), mimetype='text/csv', resumable=True)
-        file_metadata = {"name": drive_file_name}
+        file_metadata = {
+            "name": drive_file_name,
+        }
 
         existing_file = self.find_file_by_name(drive_file_name)
         if existing_file:
-            print("File", drive_file_name, "already exists")
             self.file_id = existing_file.get("id")
             response = self.service.files().update(fileId=self.file_id, media_body=media_body,
                                                    body=file_metadata).execute()
         else:
-            print("File", drive_file_name, "does not exist. Creating new file")
             response = self.service.files().create(body=file_metadata, media_body=media_body, fields="id").execute()
             self.file_id = response.get("id")
 
@@ -177,4 +206,3 @@ class GoogleDriveReminderManager:
                     return row[0], row[1]
 
         return None, None
-

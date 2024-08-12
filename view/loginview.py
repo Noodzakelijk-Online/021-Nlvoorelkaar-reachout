@@ -145,4 +145,4 @@ class LoginView(BaseView):
         else:
             self.error_label.configure(text="Login failed, please try again.")
             self.error_label.grid()
-            logging.info(f"Failed login attempt with username: {self.username.get()}")
+            logging.error(f"Failed login attempt with username: {self.username.get()}")

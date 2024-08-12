@@ -32,19 +32,26 @@ class ReminderService:
         self.loginController = loginController if loginController else LoginController()
         self.google_drive_manager = GoogleDriveReminderManager()
 
-    def start_reminder_service(self, reminder_frequency: Optional[str] = 3,
+    def start_reminder_service(self, reminder_frequency: Optional[str] = None,
                                reminder_message: Optional[str] = None):
+
+        DEFAULT_FREQUENCY = 3
+        DEFAULT_MESSAGE = "Hallo. Ik heb geprobeerd contact met je op te nemen, maar helaas heb ik geen antwoord van je gekregen. Kunt u mij alstublieft vertellen of u geïnteresseerd bent in samenwerking?"
+
+        reminder_frequency, reminder_message = (
+            reminder_frequency or None,
+            reminder_message or None,
+        )
+
+        if not reminder_frequency or not reminder_message:
+            stored_frequency, stored_message = self.google_drive_manager.read_frequency_data()
+            reminder_frequency = reminder_frequency or stored_frequency or DEFAULT_FREQUENCY
+            reminder_message = reminder_message or stored_message or DEFAULT_MESSAGE
 
         if reminder_frequency and reminder_message:
             self.google_drive_manager.write_frequency_data(reminder_frequency, reminder_message)
-        elif not reminder_frequency and not reminder_message:
-            reminder_frequency, reminder_message = self.google_drive_manager.read_frequency_data()
 
-        elif not reminder_message and reminder_frequency:
-            reminder_message = self.google_drive_manager.read_frequency_data()[1] or None
 
-        elif not reminder_frequency and reminder_message:
-            reminder_frequency = self.google_drive_manager.read_frequency_data()[0]
 
         """
             Start the reminder service
@@ -198,7 +205,7 @@ class ReminderService:
             print("No chats with no response")
             return
 
-        file_id = self.google_drive_manager.find_id_by_name("chats_no_response.csv")
+        file_id = self.google_drive_manager.find_file_id_by_name("chats_no_response.csv")
         if file_id:
             try:
                 file_content = self.google_drive_manager.download_file_content(file_id)

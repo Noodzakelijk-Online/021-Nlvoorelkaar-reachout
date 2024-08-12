@@ -27,7 +27,7 @@ class HomeView(BaseView):
         self.height = 700 if height is None else height
         self.widgets = []
         self.tab_view = ctk.CTkTabview(self.root_window)
-        self.tab_names = ["Send Messages", "Reminders", "Logs"]
+        self.tab_names = ["Send Messages", "Reminders", "Logs", "Blacklist"]
         self.checkbox_vars = {}
         self.location = None
         self.location_options = []
@@ -49,11 +49,14 @@ class HomeView(BaseView):
         self.tab_view.add("Send Messages")
         self.tab_view.add("Reminders")
         self.tab_view.add("Logs")
+        self.tab_view.add("Blacklist")
+        self.tab_view.tab("Logs").grid_columnconfigure(0, weight=1)
         self.tab_view.tab("Send Messages").focus_set()
         self.tab_view.tab("Send Messages").grid_columnconfigure(0, weight=1)
         self.tab_view.tab("Reminders").grid_rowconfigure(0, weight=1)
         self.tab_view.tab("Reminders").grid_columnconfigure(0, weight=1)
-        self.tab_view.tab("Logs").grid_columnconfigure(0, weight=1)
+        self.tab_view.tab("Blacklist").grid_columnconfigure(0, weight=1)
+
 
     def configure_window_style(self) -> None:
         self.root_window.geometry(f'{self.width}x{self.height}')
@@ -71,6 +74,7 @@ class HomeView(BaseView):
         self.create_box_get_volunteers()
         self.create_message_frame()
         self.create_logs_tab()
+        self.create_blacklist_tab()
         x = (self.root_window.winfo_screenwidth() // 2) - (self.width // 2)
         y = (self.root_window.winfo_screenheight() // 2) - (self.height // 2)
         self.root_window.geometry('{}x{}+{}+{}'.format(self.width, self.height, x, y))
@@ -361,8 +365,6 @@ class HomeView(BaseView):
             self.update_message_sent()
         elif service_id == 'notify_progress_message_sending':
             self.update_progress_bar_to_message_sending(data)
-        # elif service_id == 'notify_unanswered_chats':
-        #     self.fetch_unanswered_chats(data)
 
     def update_option_menu(self, data):
         if len(data) == 0:
@@ -592,39 +594,69 @@ class HomeView(BaseView):
 
         self.fetch_logs(error_logs_frame, info_logs_frame)
 
-    # def fetch_unanswered_chats(self, data):
-    #
-    #     time.sleep(5)
-    #
-    #     # Create a canvas with scrollbars
-    #     canvas = ctk.CTkCanvas(self.tab_view.tab(self.tab_names[1]), width=90, height=250)
-    #     canvas.grid(row=0, column=1, sticky="nsew", padx=0, pady=0)
-    #
-    #     # Create inner frame to hold chat labels (optional for better organization)
-    #     inner_frame = ctk.CTkFrame(canvas, width=90)
-    #     inner_frame.pack(fill="both", expand=True)
-    #
-    #     # Create vertical scrollbar
-    #     scrollbar = ctk.CTkScrollbar(self.tab_view.tab(self.tab_names[1]), command=canvas.yview)
-    #     scrollbar.grid(row=0, column=2, sticky="ns")
-    #
-    #     # Configure canvas scroll region
-    #     canvas.configure(scrollregion=canvas.bbox("all"), yscrollcommand=scrollbar.set)
-    #
-    #     reminder_stats_label = ctk.CTkLabel(inner_frame, text="Reminder Stats")
-    #     reminder_stats_label.pack()
-    #     self.widgets.append(reminder_stats_label)
-    #
-    #     reminder_stats_label = ctk.CTkLabel(inner_frame, text="List of chats with no response")
-    #     reminder_stats_label.pack()
-    #     self.widgets.append(reminder_stats_label)
-    #
-    #     row = 0
-    #     for chat in data:
-    #         chat_label = ctk.CTkLabel(inner_frame, text=f"{chat}", underline=True)
-    #         chat_label.pack(pady=10, padx=10)
-    #         self.widgets.append(chat_label)
-    #
-    #         chat_label.bind("<Button-1>", lambda e: webbrowser.open(chat))  # Bind click event with lambda
-    #
-    #         row += 1
+    def create_blacklist_tab(self):
+        # Create a frame for the Blacklist tab
+        blacklist_frame = ctk.CTkFrame(self.tab_view.tab("Blacklist"))
+        blacklist_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        blacklist_frame.grid_rowconfigure(0, weight=1)
+        blacklist_frame.grid_columnconfigure(0, weight=1)
+        self.widgets.append(blacklist_frame)
+
+        # Create a sub-frame to hold the input and list in a single column
+        center_frame = ctk.CTkFrame(blacklist_frame)
+        center_frame.grid(row=0, column=0, sticky="nsew", pady=10)
+        center_frame.grid_rowconfigure(3, weight=1)
+        center_frame.grid_columnconfigure(0, weight=1)
+        self.widgets.append(center_frame)
+
+        # Create a label and entry for inputting a user to blacklist
+        blacklist_label = ctk.CTkLabel(center_frame, text="User to Blacklist")
+        blacklist_label.grid(row=0, column=0, sticky="w", pady=(0, 5), padx=(20, 0))  # Left padding added
+        self.widgets.append(blacklist_label)
+
+        blacklist_entry_var = ctk.StringVar()
+        blacklist_entry = ctk.CTkEntry(center_frame, textvariable=blacklist_entry_var)
+        blacklist_entry.grid(row=1, column=0, sticky="ew", padx=(20, 0))  # Left padding added
+        self.widgets.append(blacklist_entry)
+
+        # Create a button to add the user to the blacklist, smaller and on the left
+        add_blacklist_button = ctk.CTkButton(center_frame, text="Add", width=80,  # Set the width to make it smaller
+                                             command=lambda: self.add_to_blacklist(blacklist_entry_var.get()))
+        add_blacklist_button.grid(row=2, column=0, sticky="w", pady=(10, 0), padx=(20, 5))  # Left padding added
+        self.widgets.append(add_blacklist_button)
+
+        # Create a scrollable frame for displaying blacklisted users
+        blacklisted_users_frame = ctk.CTkFrame(center_frame)
+        blacklisted_users_frame.grid(row=3, column=0, sticky="nsew", pady=10, padx=(20, 5))  # Left padding added
+        self.widgets.append(blacklisted_users_frame)
+
+        # Create a scrollable canvas
+        blacklisted_users_canvas = ctk.CTkCanvas(blacklisted_users_frame)
+        blacklisted_users_canvas.pack(side="left", fill="both", expand=True)
+
+        # Add a scrollbar
+        scrollbar = ctk.CTkScrollbar(blacklisted_users_frame, command=blacklisted_users_canvas.yview)
+        scrollbar.pack(side="right", fill="y")
+        blacklisted_users_canvas.configure(yscrollcommand=scrollbar.set)
+
+        # Create a frame inside the canvas to hold the blacklisted users list
+        blacklisted_users_list_frame = ctk.CTkFrame(blacklisted_users_canvas)
+        blacklisted_users_canvas.create_window((0, 0), window=blacklisted_users_list_frame, anchor="nw")
+
+        # Update the canvas to resize based on content
+        blacklisted_users_list_frame.bind("<Configure>", lambda e: blacklisted_users_canvas.configure(
+            scrollregion=blacklisted_users_canvas.bbox("all")))
+
+        # Save references for later use
+        self.blacklisted_users_canvas = blacklisted_users_canvas
+        self.blacklisted_users_list_frame = blacklisted_users_list_frame
+
+    def add_to_blacklist(self, user: str) -> None:
+        if user:
+            label = ctk.CTkLabel(self.blacklisted_users_list_frame, text=user)
+            label.pack(anchor="w", padx=5, pady=2)
+            self.widgets.append(label)
+            # Additional logic to save the blacklisted user to a persistent storage or service can be added here.
+        else:
+            print("No user entered to blacklist")
+

@@ -23,7 +23,7 @@ def contact_date_to_csv(volunteer_id: str, drive_manager: GoogleDriveReminderMan
     """
     today = date.today()
     six_months_ago = today - relativedelta(months=6)
-    file_id = drive_manager.find_id_by_name("contacts_date.csv")
+    file_id = drive_manager.find_file_id_by_name("contacts_date.csv")
     file_content = drive_manager.download_file_content(file_id)
     rows = list(csv.reader(io.StringIO(file_content.decode('utf-8'))))
 
@@ -66,7 +66,7 @@ def pre_send_message_check(volunteer_id: str, drive_manager: GoogleDriveReminder
     """
     today = date.today()
     six_months_ago = today - relativedelta(months=6)
-    file_id = drive_manager.find_id_by_name("contacts_date.csv")
+    file_id = drive_manager.find_file_id_by_name("contacts_date.csv")
     file_content = drive_manager.download_file_content(file_id)
     rows = []
     if file_content:
@@ -103,7 +103,7 @@ def check_if_volunteer_id_is_banned(volunteer_id: str, drive_manager: GoogleDriv
     """
     today = date.today()
     twelve_months_ago = today.replace(year=today.year - 1)
-    file_id = drive_manager.find_id_by_name("chats_no_response.csv")
+    file_id = drive_manager.find_file_id_by_name("chats_no_response.csv")
     file_content = drive_manager.download_file_content(file_id)
     rows = list(csv.reader(io.StringIO(file_content.decode('utf-8'))))
 
