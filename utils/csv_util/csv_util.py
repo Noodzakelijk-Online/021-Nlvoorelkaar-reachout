@@ -7,11 +7,11 @@ from os.path import join, dirname
 
 from dateutil.relativedelta import relativedelta
 
-from google_drive.google_api_services import GoogleDriveReminderManager
+from google_drive.google_api_services import GoogleDriveManager
 
 
 
-def contact_date_to_csv(volunteer_id: str, drive_manager: GoogleDriveReminderManager):
+def contact_date_to_csv(volunteer_id: str, drive_manager: GoogleDriveManager):
     """
     Update the last contact date for the volunteer with the given volunteer_id.
     If the volunteer_id is not found in the file, a new record will be added.
@@ -42,18 +42,18 @@ def contact_date_to_csv(volunteer_id: str, drive_manager: GoogleDriveReminderMan
         file_content = io.StringIO()
         writer = csv.writer(file_content)
         writer.writerows(rows)
-        drive_manager.upload_file_content(file_content.getvalue().encode('utf-8'), file_id,"contacts_date.csv")
+        drive_manager.upload_file_content(file_content.getvalue().encode('utf-8'), "contacts_date.csv")
     if not updated:  # Here's the logic to check for new volunteer_id
         new_row = [volunteer_id, today.strftime('%Y-%m-%d')]
         rows.append(new_row)  # Add new row to the in-memory list
         file_content = io.StringIO()
         writer = csv.writer(file_content)
         writer.writerows(rows)  # Write updated list with new row
-        drive_manager.upload_file_content(file_content.getvalue().encode('utf-8'), file_id, "contacts_date.csv")
+        drive_manager.upload_file_content(file_content.getvalue().encode('utf-8'),  "contacts_date.csv")
 
 
 
-def pre_send_message_check(volunteer_id: str, drive_manager: GoogleDriveReminderManager):
+def pre_send_message_check(volunteer_id: str, drive_manager: GoogleDriveManager):
     """
     Check if the message can be sent to the volunteer with the given volunteer_id.
     The message can be sent if the last contact date is more than six months ago
@@ -92,7 +92,7 @@ def pre_send_message_check(volunteer_id: str, drive_manager: GoogleDriveReminder
         print(f"Cannot send message to volunteer with id {volunteer_id}: Last contact date is {last_contact_date}")
         return False
 
-def check_if_volunteer_id_is_banned(volunteer_id: str, drive_manager: GoogleDriveReminderManager):
+def check_if_volunteer_id_is_banned(volunteer_id: str, drive_manager: GoogleDriveManager):
     """
     Check if the volunteer with the given volunteer_id is banned from receiving messages.
 

@@ -2,7 +2,7 @@ import csv
 from random import randint
 from googleapiclient.errors import HttpError
 
-from google_drive.google_api_services import GoogleDriveReminderManager
+from google_drive.google_api_services import GoogleDriveManager
 import time
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
@@ -30,13 +30,19 @@ class ReminderService:
         self.notifier = None
         self.stopped = False
         self.loginController = loginController if loginController else LoginController()
-        self.google_drive_manager = GoogleDriveReminderManager()
+        self.google_drive_manager = GoogleDriveManager()
 
     def start_reminder_service(self, reminder_frequency: Optional[str] = None,
                                reminder_message: Optional[str] = None):
 
         DEFAULT_FREQUENCY = 3
-        DEFAULT_MESSAGE = "Hallo. Ik heb geprobeerd contact met je op te nemen, maar helaas heb ik geen antwoord van je gekregen. Kunt u mij alstublieft vertellen of u geïnteresseerd bent in samenwerking?"
+        DEFAULT_MESSAGE = f'''
+                                Hello,
+                                
+                                Were you able to check my request and if so, could you tell me if you are interested?
+                                I am looking forward to your response,
+                                
+                          '''
 
         reminder_frequency, reminder_message = (
             reminder_frequency or None,
@@ -270,7 +276,7 @@ class ReminderService:
 
         # Upload the updated file to Google Drive
         try:
-            self.google_drive_manager.upload_file_content(output.getvalue().encode('utf-8'), file_id,
+            self.google_drive_manager.upload_file_content(output.getvalue().encode('utf-8'),
                                                           "chats_no_response.csv")
             print("File updated successfully on Google Drive.")
         except HttpError as error:

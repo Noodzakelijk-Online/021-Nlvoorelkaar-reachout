@@ -44,3 +44,8 @@ class ServiceManagerInterface(ABC):
     def stop_reminder_service(self):
         pass
 
+    def add_to_blacklist(self, offer_url ):
+        pass
+
+    def get_blacklisted_users(self):
+        pass

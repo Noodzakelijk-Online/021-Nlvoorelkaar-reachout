@@ -610,7 +610,7 @@ class HomeView(BaseView):
         self.widgets.append(center_frame)
 
         # Create a label and entry for inputting a user to blacklist
-        blacklist_label = ctk.CTkLabel(center_frame, text="User to Blacklist")
+        blacklist_label = ctk.CTkLabel(center_frame, text="User id to Blacklist")
         blacklist_label.grid(row=0, column=0, sticky="w", pady=(0, 5), padx=(20, 0))  # Left padding added
         self.widgets.append(blacklist_label)
 
@@ -651,12 +651,24 @@ class HomeView(BaseView):
         self.blacklisted_users_canvas = blacklisted_users_canvas
         self.blacklisted_users_list_frame = blacklisted_users_list_frame
 
-    def add_to_blacklist(self, user: str) -> None:
-        if user:
-            label = ctk.CTkLabel(self.blacklisted_users_list_frame, text=user)
+        # Display already blacklisted users
+        self.display_blacklisted_users()
+
+    def display_blacklisted_users(self):
+        # Get the list of blacklisted users from the service manager
+        blacklisted_users = self.service_manager.get_blacklisted_users()
+
+        # Create and place a label for each blacklisted user
+        for user_id in blacklisted_users:
+            label = ctk.CTkLabel(self.blacklisted_users_list_frame, text=user_id)
             label.pack(anchor="w", padx=5, pady=2)
             self.widgets.append(label)
-            # Additional logic to save the blacklisted user to a persistent storage or service can be added here.
+
+    def add_to_blacklist(self, user_id: str) -> None:
+        if user_id:
+            label = ctk.CTkLabel(self.blacklisted_users_list_frame, text=user_id)
+            label.pack(anchor="w", padx=5, pady=2)
+            self.service_manager.add_to_blacklist(user_id)
+            self.widgets.append(label)
         else:
             print("No user entered to blacklist")
-

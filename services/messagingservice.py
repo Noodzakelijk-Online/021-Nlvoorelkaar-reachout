@@ -3,7 +3,8 @@ import random
 import time
 from typing import Optional, List
 
-from google_drive.google_api_services import GoogleDriveReminderManager
+from google_drive.google_api_services import GoogleDriveManager
+from services.blacklistservice import BlacklistService
 from utils.csv_util.csv_util import contact_date_to_csv, pre_send_message_check
 
 from config.settings import headers, url_volunteer, minimum_time, maximum_time, url_base
@@ -25,7 +26,8 @@ class MessagingService:
         self.notifier = None
         self.delay_to_start_sending = random.uniform(10.141516, 29.141516)
         self.loginController = loginController if loginController else LoginController()
-        self.google_drive_manager = GoogleDriveReminderManager()
+        self.google_drive_manager = GoogleDriveManager()
+        self.blService = BlacklistService()
 
     def send_messages(self, notifier, username: str, password: str, message: str, phoneNumber: str,
                       recipients: List[str]) -> None:
@@ -57,6 +59,8 @@ class MessagingService:
 
     def __send_message(self, volunteer_id: str) -> bool:
         url = f'{url_volunteer}{volunteer_id}?showMessage=1'
+        if self.blService.check_if_was_blacklisted(volunteer_id):
+            return False
         try:
             response = SessionManager.get_session().get(url, headers=headers)
             if response.status_code == 200:

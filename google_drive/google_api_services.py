@@ -12,16 +12,16 @@ from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 import speedtab as st
 
 SCOPES = ["https://www.googleapis.com/auth/drive"]
-mode = "development"  # "development"
-PATH = "../../google_drive" if mode == "production" else "."
+mode = "production"  # "development"
+PATH = "./"
 
 
-class GoogleDriveReminderManager:
+class GoogleDriveManager:
     _instance = None
 
     def __new__(cls, *args, **kwargs):
         if not cls._instance:
-            cls._instance = super(GoogleDriveReminderManager, cls).__new__(cls, *args, **kwargs)
+            cls._instance = super(GoogleDriveManager, cls).__new__(cls, *args, **kwargs)
             cls._instance._initialized = False
         return cls._instance
 
@@ -90,6 +90,12 @@ class GoogleDriveReminderManager:
         except Exception as e:
             print("An error occurred: %s" % e)
 
+    def get_new_credentials(self):
+
+        flow = InstalledAppFlow.from_client_secrets_file(f"{PATH}/credentials.json", SCOPES)
+        creds = flow.run_local_server(port=0)
+        return creds
+
     def get_folder_id_by_name(self, folder_name):
         query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder'"
         results = self.service.files().list(q=query, spaces='drive', fields="files(id, name)").execute()
@@ -143,7 +149,7 @@ class GoogleDriveReminderManager:
 
         return self.file_id
 
-    def upload_file_content(self, file_content, file_id, drive_file_name):
+    def upload_file_content(self, file_content, drive_file_name):
         media_body = MediaIoBaseUpload(io.BytesIO(file_content), mimetype='text/csv', resumable=True)
         file_metadata = {
             "name": drive_file_name,
@@ -189,9 +195,9 @@ class GoogleDriveReminderManager:
             file_content.seek(0)
 
             if file_id:
-                self.upload_file_content(file_content.getvalue().encode('utf-8'), file_id, file_name)
+                self.upload_file_content(file_content.getvalue().encode('utf-8'), file_name)
             else:
-                self.upload_file_content(file_content.getvalue().encode('utf-8'), None, file_name)
+                self.upload_file_content(file_content.getvalue().encode('utf-8'), file_name)
 
     def read_frequency_data(self):
         file_name = "reminder_data.csv"

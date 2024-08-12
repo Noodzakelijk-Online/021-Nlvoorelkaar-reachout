@@ -3,6 +3,7 @@ import time
 from typing import List, Optional
 
 from controllers.logincontroller import LoginController
+from services.blacklistservice import BlacklistService
 from services.locationautocompleteservice import LocationAutocompleteService
 from services.messagingservice import MessagingService
 from services.reminderservice import ReminderService
@@ -24,9 +25,7 @@ class ServiceManager(ServiceManagerInterface):
         self.location_autocomplete_service = LocationAutocompleteService()
         self.messaging_service = MessagingService()
         self.reminder_service = ReminderService()
-
-
-
+        self.blacklist_service = BlacklistService()
 
     def subscribe(self, observer):
         """
@@ -151,7 +150,8 @@ class ServiceManager(ServiceManagerInterface):
         for observer in self.__observers:
             observer.notify('notify_progress_message_sending', data)
 
-    def start_reminder_service(self, reminder_frequency: Optional[int] = None, custom_reminder_message: Optional[str] = None):
+    def start_reminder_service(self, reminder_frequency: Optional[int] = None,
+                               custom_reminder_message: Optional[str] = None):
         """
         Start the reminder service.
         """
@@ -176,3 +176,9 @@ class ServiceManager(ServiceManagerInterface):
         Stop the reminder service.
         """
         self.reminder_service.stop_reminder_service()
+
+    def add_to_blacklist(self, offer_url):
+        self.blacklist_service.add_to_blacklist(offer_url)
+
+    def get_blacklisted_users(self) -> [str]:
+        return self.blacklist_service.get_blacklisted_users()
