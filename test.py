@@ -7,8 +7,8 @@ from config.settings import headers
 from models.sessionmanager import SessionManager
 
 
-def get_profile_url(url):
-    response = SessionManager.get_session().get(url, headers=headers)
+def get_profile_id(offer_url):
+    response = SessionManager.get_session().get(offer_url, headers=headers)
     # Check if the request was successful
     if response.status_code == 200:
         # Step 2: Parse the HTML content of the page
@@ -28,7 +28,10 @@ def get_profile_url(url):
                 if a_tag:
                     # Step 6: Get the href attribute of the <a> tag
                     href = a_tag.get('href')
-                    print(f'Found href: {href}')
+
+                    id = href.strip("/").split("/")[1]
+                    print(f'Found profile_id: {href}')
+                    return id
                 else:
                     print("No <a> tag found inside the meta div.")
             else:

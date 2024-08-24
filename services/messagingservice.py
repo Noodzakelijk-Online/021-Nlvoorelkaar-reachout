@@ -5,7 +5,7 @@ from typing import Optional, List
 
 from google_drive.google_api_services import GoogleDriveManager
 from services.blacklistservice import BlacklistService
-from test import get_profile_url
+from test import get_profile_id
 from utils.csv_util.csv_util import contact_date_to_csv, pre_send_message_check
 
 from config.settings import headers, url_volunteer, minimum_time, maximum_time, url_base
@@ -59,8 +59,8 @@ class MessagingService:
 
     def __send_message(self, volunteer_id: str) -> bool:
         url = f'{url_volunteer}{volunteer_id}?showMessage=1'
-        get_profile_url(url)
-        if self.blService.check_if_was_blacklisted(volunteer_id):
+        profile_id= get_profile_id(url)
+        if self.blService.check_if_was_blacklisted(profile_id):
             return False
         try:
             response = SessionManager.get_session().get(url, headers=headers)

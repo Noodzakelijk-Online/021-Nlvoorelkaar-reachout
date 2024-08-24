@@ -44,6 +44,7 @@ class HomeView(BaseView):
         self.option_menu = None
         self.location_ids_types = {}
 
+
     def configure_tab_view(self) -> None:
         self.tab_view.pack(fill="both", expand=True)
         self.tab_view.add("Send Messages")
@@ -609,7 +610,7 @@ class HomeView(BaseView):
         self.widgets.append(center_frame)
 
         # Create a label and entry for inputting a user to blacklist
-        blacklist_label = ctk.CTkLabel(center_frame, text="User id to Blacklist")
+        blacklist_label = ctk.CTkLabel(center_frame, text="Profile id to Blacklist")
         blacklist_label.grid(row=0, column=0, sticky="w", pady=(0, 5), padx=(20, 0))  # Left padding added
         self.widgets.append(blacklist_label)
 
@@ -665,9 +666,13 @@ class HomeView(BaseView):
 
     def add_to_blacklist(self, user_id: str) -> None:
         if user_id:
-            label = ctk.CTkLabel(self.blacklisted_users_list_frame, text=user_id)
-            label.pack(anchor="w", padx=5, pady=2)
+            print(self.service_manager.get_blacklisted_users())
+            print(user_id)
+            print(user_id not in self.service_manager.get_blacklisted_users())
+            if user_id not in self.service_manager.get_blacklisted_users():
+                label = ctk.CTkLabel(self.blacklisted_users_list_frame, text=user_id)
+                label.pack(anchor="w", padx=5, pady=2)
+                self.widgets.append(label)
             self.service_manager.add_to_blacklist(user_id)
-            self.widgets.append(label)
         else:
             print("No user entered to blacklist")
