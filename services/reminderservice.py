@@ -198,7 +198,7 @@ class ReminderService:
 
                     # time.sleep(randint(45, 75))
                     # response = SessionManager.get_session().post(chat_url, data=data, headers=headers)
-
+                    #
                     # if response.status_code == 200:
                     #     print(f'Reminder sent to {chat_url}', "Text: ", message)
                     return True
@@ -227,7 +227,6 @@ class ReminderService:
             file_stream = io.StringIO(file_content.decode('utf-8'))
             reader = csv.reader(file_stream)
             rows_in_file = list(reader)
-            print("Rows in file: ", rows_in_file)
 
         updated_rows = []
         today = date.today()
@@ -266,7 +265,6 @@ class ReminderService:
 
         # Combine updated rows with existing ones, removing duplicates
         unique_rows = {tuple(row) for row in updated_rows + rows_in_file}
-        print("Unique rows: ", unique_rows)
 
         # Write the updated CSV content to a string buffer
         output = io.StringIO()
@@ -278,7 +276,6 @@ class ReminderService:
         try:
             self.google_drive_manager.upload_file_content(output.getvalue().encode('utf-8'),
                                                           "chats_no_response.csv")
-            print("File updated successfully on Google Drive.")
         except HttpError as error:
             print(f"An error occurred while uploading the file: {error}")
 

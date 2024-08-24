@@ -61,7 +61,6 @@ class GoogleDriveManager:
             folder_name = "nlvoorelkaar_data"
 
             self.folder_id = self.get_folder_id_by_name(folder_name)
-            print("FOLDER ID", self.folder_id)
 
             if not self.folder_id:
                 file_metadata = {
@@ -72,7 +71,6 @@ class GoogleDriveManager:
                 folder_id = folder.get('id')
 
                 self.folder_id = folder_id
-                print("FOLDER ID", self.folder_id)
 
             files = ["contacts_date.csv", "reminder_data.csv", "chats_no_response.csv", "blacklisted_volunteers.csv"]
             for file in files:

@@ -78,8 +78,16 @@ class ServiceManager(ServiceManagerInterface):
         """
         This private method is used to get the amount of volunteers in a separate thread.
         """
-        data = self.volunteer_service.get_amount_of_volunteer(checkbox_vars, location_ids_types, location, distance)
-        self.notify_total_volunteers(data)
+        try:
+            # This line interacts with Tkinter and may raise RuntimeError if not in the main thread
+            data = self.volunteer_service.get_amount_of_volunteer(checkbox_vars, location_ids_types, location, distance)
+            self.notify_total_volunteers(data)
+        except RuntimeError as e:
+            if str(e) == "main thread is not in main loop":
+                # Log the error or handle it appropriately
+                print("Suppressed RuntimeError:", e)
+            else:
+                raise  # Re-raise any other unexpected RuntimeErrors
 
     def __get_volunteers_in_thread(self, checkbox_vars, location_ids_types, location, distance):
         """

@@ -5,6 +5,7 @@ from typing import Optional, List
 
 from google_drive.google_api_services import GoogleDriveManager
 from services.blacklistservice import BlacklistService
+from test import get_profile_url
 from utils.csv_util.csv_util import contact_date_to_csv, pre_send_message_check
 
 from config.settings import headers, url_volunteer, minimum_time, maximum_time, url_base
@@ -48,7 +49,6 @@ class MessagingService:
                         contact_date_to_csv(recipient, self.google_drive_manager)
                     else:
                         print(f"Failed to send message to {recipient}")
-
             else:
                 pass
 
@@ -59,6 +59,7 @@ class MessagingService:
 
     def __send_message(self, volunteer_id: str) -> bool:
         url = f'{url_volunteer}{volunteer_id}?showMessage=1'
+        get_profile_url(url)
         if self.blService.check_if_was_blacklisted(volunteer_id):
             return False
         try:
@@ -77,14 +78,14 @@ class MessagingService:
                 logging.error(f'Error while sending message to volunteer with id {volunteer_id}: '
                               f'Could not get message page')
                 return False
-            response = SessionManager.get_session().post(url, data=data, headers=headers)
-            if response.status_code != 200:
-                time.sleep(1)
-                logging.error(f'Error while sending message to volunteer with id {volunteer_id}: '
-                              f'Server responded with status code {response.status_code}')
-                print(f'Error while sending message to volunteer with id {volunteer_id}: '
-                      f'Server responded with status code {response.status_code}')
-                return False
+            # response = SessionManager.get_session().post(url, data=data, headers=headers)
+            # if response.status_code != 200:
+            #     time.sleep(1)
+            #     logging.error(f'Error while sending message to volunteer with id {volunteer_id}: '
+            #                   f'Server responded with status code {response.status_code}')
+            #     print(f'Error while sending message to volunteer with id {volunteer_id}: '
+            #           f'Server responded with status code {response.status_code}')
+            #     return False
 
             print(
                 f'Message sent to volunteer with id {volunteer_id}' + f' Server responded with status code {response.status_code}')

@@ -507,9 +507,8 @@ class HomeView(BaseView):
 
         stop_reminder_service_button = ctk.CTkButton(reminder_frame, text="Stop reminder service",
                                                      command=lambda: threading.Thread(
-                                                         target=self.start_reminder_service,
-                                                         args=(set_reminder_frequency(),
-                                                               set_custom_reminder_message())).start())
+                                                         target=self.stop_reminder_service).start()
+                                                     )
         stop_reminder_service_button.grid(row=3, column=2, sticky="nsew", pady=(10, 0))
         self.widgets.append(stop_reminder_service_button)
 
