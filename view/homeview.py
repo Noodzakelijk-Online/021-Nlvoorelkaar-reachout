@@ -44,7 +44,6 @@ class HomeView(BaseView):
         self.option_menu = None
         self.location_ids_types = {}
 
-
     def configure_tab_view(self) -> None:
         self.tab_view.pack(fill="both", expand=True)
         self.tab_view.add("Send Messages")
@@ -57,7 +56,6 @@ class HomeView(BaseView):
         self.tab_view.tab("Reminders").grid_rowconfigure(0, weight=1)
         self.tab_view.tab("Reminders").grid_columnconfigure(0, weight=1)
         self.tab_view.tab("Blacklist").grid_columnconfigure(0, weight=1)
-
 
     def configure_window_style(self) -> None:
         self.root_window.geometry(f'{self.width}x{self.height}')
@@ -515,8 +513,6 @@ class HomeView(BaseView):
 
         stop_reminder_service_button.place(relx=0.3, rely=0.3, anchor="center")
 
-
-
     def stop_reminder_service(self):
         print("Stopping reminder service")
         self.service_manager.stop_reminder_service()
@@ -651,10 +647,17 @@ class HomeView(BaseView):
         self.blacklisted_users_canvas = blacklisted_users_canvas
         self.blacklisted_users_list_frame = blacklisted_users_list_frame
 
-        # Display already blacklisted users
+        refresh_button = ctk.CTkButton(center_frame, text="Refresh", command=self.refresh_blacklisted_users)
+        refresh_button.grid(row=4, column=0, sticky="w", pady=(10, 0), padx=(20, 5))  # Added button
+        self.widgets.append(refresh_button)
+
         self.display_blacklisted_users()
 
     def display_blacklisted_users(self):
+        # Clear current list
+        for widget in self.blacklisted_users_list_frame.winfo_children():
+            widget.destroy()
+
         # Get the list of blacklisted users from the service manager
         blacklisted_users = self.service_manager.get_blacklisted_users()
 
@@ -664,15 +667,12 @@ class HomeView(BaseView):
             label.pack(anchor="w", padx=5, pady=2)
             self.widgets.append(label)
 
+    def refresh_blacklisted_users(self):
+        self.display_blacklisted_users()
+
     def add_to_blacklist(self, user_id: str) -> None:
         if user_id:
-            print(self.service_manager.get_blacklisted_users())
-            print(user_id)
-            print(user_id not in self.service_manager.get_blacklisted_users())
-            if user_id not in self.service_manager.get_blacklisted_users():
-                label = ctk.CTkLabel(self.blacklisted_users_list_frame, text=user_id)
-                label.pack(anchor="w", padx=5, pady=2)
-                self.widgets.append(label)
             self.service_manager.add_to_blacklist(user_id)
+            self.refresh_blacklisted_users()  # Refresh the list after adding
         else:
             print("No user entered to blacklist")

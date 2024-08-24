@@ -61,6 +61,7 @@ class MessagingService:
         url = f'{url_volunteer}{volunteer_id}?showMessage=1'
         profile_id= get_profile_id(url)
         if self.blService.check_if_was_blacklisted(profile_id):
+            print(f"Volunteer with id {profile_id} was blacklistec")
             return False
         try:
             response = SessionManager.get_session().get(url, headers=headers)
