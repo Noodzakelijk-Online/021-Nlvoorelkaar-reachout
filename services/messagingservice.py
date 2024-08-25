@@ -61,7 +61,7 @@ class MessagingService:
         url = f'{url_volunteer}{volunteer_id}?showMessage=1'
         profile_id= get_profile_id(url)
         if self.blService.check_if_was_blacklisted(profile_id):
-            print(f"Volunteer with id {profile_id} was blacklistec")
+            print(f"Volunteer with id {profile_id} was blacklisted")
             return False
         try:
             response = SessionManager.get_session().get(url, headers=headers)
@@ -79,14 +79,14 @@ class MessagingService:
                 logging.error(f'Error while sending message to volunteer with id {volunteer_id}: '
                               f'Could not get message page')
                 return False
-            # response = SessionManager.get_session().post(url, data=data, headers=headers)
-            # if response.status_code != 200:
-            #     time.sleep(1)
-            #     logging.error(f'Error while sending message to volunteer with id {volunteer_id}: '
-            #                   f'Server responded with status code {response.status_code}')
-            #     print(f'Error while sending message to volunteer with id {volunteer_id}: '
-            #           f'Server responded with status code {response.status_code}')
-            #     return False
+            response = SessionManager.get_session().post(url, data=data, headers=headers)
+            if response.status_code != 200:
+                time.sleep(1)
+                logging.error(f'Error while sending message to volunteer with id {volunteer_id}: '
+                              f'Server responded with status code {response.status_code}')
+                print(f'Error while sending message to volunteer with id {volunteer_id}: '
+                      f'Server responded with status code {response.status_code}')
+                return False
 
             print(
                 f'Message sent to volunteer with id {volunteer_id}' + f' Server responded with status code {response.status_code}')
