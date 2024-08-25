@@ -622,8 +622,8 @@ class HomeView(BaseView):
         self.widgets.append(add_blacklist_button)
 
         # Create a scrollable frame for displaying blacklisted users
-        blacklisted_users_frame = ctk.CTkFrame(center_frame)
-        blacklisted_users_frame.grid(row=3, column=0, sticky="nsew", pady=10, padx=(20, 5))  # Left padding added
+        blacklisted_users_frame = ctk.CTkFrame(center_frame,  height=500)
+        blacklisted_users_frame.grid(row=4, column=0, sticky="nsew", pady=10, padx=(20, 5))
         self.widgets.append(blacklisted_users_frame)
 
         # Create a scrollable canvas
@@ -643,15 +643,27 @@ class HomeView(BaseView):
         blacklisted_users_list_frame.bind("<Configure>", lambda e: blacklisted_users_canvas.configure(
             scrollregion=blacklisted_users_canvas.bbox("all")))
 
+        blacklisted_users_frame.configure(height=300)  # Adjust the height as needed
+
         # Save references for later use
         self.blacklisted_users_canvas = blacklisted_users_canvas
         self.blacklisted_users_list_frame = blacklisted_users_list_frame
 
-        refresh_button = ctk.CTkButton(center_frame, text="Refresh", command=self.refresh_blacklisted_users)
-        refresh_button.grid(row=4, column=0, sticky="w", pady=(10, 0), padx=(20, 5))  # Added button
-        self.widgets.append(refresh_button)
-
         self.display_blacklisted_users()
+
+        # Create a label and entry for removing a user from blacklist
+        remove_label = ctk.CTkLabel(center_frame, text="Profile id to Remove")
+        remove_label.grid(row=8, column=0, sticky="w", pady=(10, 5), padx=(20, 0))
+
+        remove_entry_var = ctk.StringVar()
+        remove_entry = ctk.CTkEntry(center_frame, textvariable=remove_entry_var)
+        remove_entry.grid(row=10, column=0, sticky="ew", padx=(20, 0))
+
+        # Create a button to remove user, smaller and on the left
+        remove_blacklist_button = ctk.CTkButton(center_frame, text="Remove", width=80,
+                                                command=lambda: self.remove_from_blacklist(remove_entry_var.get()))
+        remove_blacklist_button.grid(row=12, column=0, sticky="w", pady=(10, 0), padx=(20, 5))
+
 
     def display_blacklisted_users(self):
         # Clear current list
@@ -676,3 +688,10 @@ class HomeView(BaseView):
             self.refresh_blacklisted_users()  # Refresh the list after adding
         else:
             print("No user entered to blacklist")
+
+    def remove_from_blacklist(self, profile_id: str) -> None:
+        if profile_id:
+            self.service_manager.remove_from_blacklist(profile_id)  # Call service manager function
+            self.refresh_blacklisted_users()  # Refresh the list after removal
+        else:
+            print("No user entered to remove from blacklist")

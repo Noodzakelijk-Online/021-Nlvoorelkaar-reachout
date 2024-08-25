@@ -185,8 +185,11 @@ class ServiceManager(ServiceManagerInterface):
         """
         self.reminder_service.stop_reminder_service()
 
-    def add_to_blacklist(self, offer_url):
-        self.blacklist_service.add_to_blacklist(offer_url)
+    def add_to_blacklist(self, profile_id):
+        self.blacklist_service.add_to_blacklist(profile_id)
 
     def get_blacklisted_users(self) -> [str]:
         return self.blacklist_service.get_blacklisted_users()
+
+    def remove_from_blacklist(self, profile_id):
+        return self.blacklist_service.remove_from_blacklist(profile_id)
