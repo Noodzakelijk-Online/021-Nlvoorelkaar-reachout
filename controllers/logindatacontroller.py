@@ -25,8 +25,11 @@ class LoginDataController(LoginDataControllerInterface):
         if os.path.exists(LoginDataController.LOGIN_DATA_FILE):
             with open(LoginDataController.LOGIN_DATA_FILE, "rb") as file:
                 encrypted_data = file.read()
-            decrypted_data = json.loads(self.cipher_suite.decrypt(encrypted_data).decode())
-            return decrypted_data["username"], decrypted_data["password"]
+            if encrypted_data:
+                decrypted_data = json.loads(self.cipher_suite.decrypt(encrypted_data).decode())
+                return decrypted_data["username"], decrypted_data["password"]
+            return None, None
+
         else:
             return None, None
 

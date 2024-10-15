@@ -18,7 +18,6 @@ class BlacklistService:
             with io.StringIO(existing_content.decode('utf-8')) as file:
                 reader = csv.reader(file)
                 existing_blacklist = list(reader)
-                print("Existing blacklist", existing_blacklist)
         else:
             # If file doesn't exist, create an empty list
             existing_blacklist = []

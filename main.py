@@ -24,7 +24,6 @@ def on_close():
 
 
 if __name__ == '__main__':
-    try:
         LoggingManager().config()
         service_manager = ServiceManager()  # Create an instance of ServiceManager
         root_window = ctk.CTk()
@@ -39,5 +38,3 @@ if __name__ == '__main__':
 
         root_window.mainloop()
 
-    except Exception as e:
-        print(e)

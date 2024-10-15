@@ -4,15 +4,10 @@ import threading
 import time
 import webbrowser
 from typing import Optional
-from tkinter import messagebox
 from routing.windowsmanagerinterface import WindowManagerInterface
 from services.servicemanagerinterface import ServiceManagerInterface
 from view.baseview import BaseView
 import customtkinter as ctk
-from tkinter import *
-
-from view.utilsgui import center_window
-
 
 class HomeView(BaseView):
     def __init__(self, root_window: ctk.CTk, windows_manager: WindowManagerInterface,

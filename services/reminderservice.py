@@ -17,13 +17,13 @@ from models.sessionmanager import SessionManager
 from bs4 import BeautifulSoup, PageElement
 
 from models.stringlist import StringLists
-
-
-
+from services.blacklistservice import BlacklistService
+from utils.profile_id_extractor import get_profile_id, get_offer_url_from_chat_page
 
 
 class ReminderService:
     def __init__(self, loginController: Optional[LoginControllerInterface] = None):
+        self.blService = BlacklistService()
         self.message = None
         self.username = None
         self.password = None
@@ -32,8 +32,8 @@ class ReminderService:
         self.loginController = loginController if loginController else LoginController()
         self.google_drive_manager = GoogleDriveManager()
 
-    def start_reminder_service(self, reminder_frequency: Optional[str] = None,
-                               reminder_message: Optional[str] = None):
+    def run_reminder_service(self, reminder_frequency: Optional[str] = None,
+                             reminder_message: Optional[str] = None):
 
         DEFAULT_FREQUENCY = 3
         DEFAULT_MESSAGE = f'''
@@ -57,29 +57,21 @@ class ReminderService:
         if reminder_frequency and reminder_message:
             self.google_drive_manager.write_frequency_data(reminder_frequency, reminder_message)
 
-
-
-        """
-            Start the reminder service
-        """
         print('Reminder frequency: ', reminder_frequency)
         print('Reminder message: ', reminder_message)
 
-        chats_with_no_response = None
-        if reminder_frequency:
-            chats_with_no_response = self.get_unanswered_chats(reminder_frequency)
-            print(chats_with_no_response)
+        chats_with_no_response = self.get_unanswered_chats(reminder_frequency)
+        print("Chats with no response:", chats_with_no_response)
+
         if not reminder_frequency:
             reminder_frequency = 3
-            chats_with_no_response = self.get_unanswered_chats(reminder_frequency)
-            print(chats_with_no_response)
 
         if chats_with_no_response:
+            self.csv_handler(chats_with_no_response, reminder_frequency, reminder_message)
 
-            if reminder_message:
-                self.csv_handler(chats_with_no_response, reminder_frequency, reminder_message)
-            else:
-                self.csv_handler(chats_with_no_response, reminder_frequency)
+
+        self.stop_reminder_service()
+
 
     def get_all_contacted_names(self) -> StringLists | bool:
 
@@ -88,38 +80,35 @@ class ReminderService:
 
         return: StringLists object with names and urls
         """
-        try:
-            urls = []
-            url = 'https://www.nlvoorelkaar.nl/mijn-pagina/berichten'
-            urls.append(url)
-            response = SessionManager.get_session().get(url, headers=headers)
-            if response.status_code == 200:
+        print("Collecting all chats...")
+        urls = []
+        url = 'https://www.nlvoorelkaar.nl/mijn-pagina/berichten'
+        urls.append(url)
+        response = SessionManager.get_session().get(url, headers=headers)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, 'html.parser')
+            paginator = soup.find('div', {'class': 'paginator'})
+
+            if paginator:
+                pages = paginator.find_all('a')
+                for page in pages:
+                    if not page.text.isalpha():
+                        page_number = int(page.text)
+                        if page_number > 1:
+                            url = f'https://www.nlvoorelkaar.nl/mijn-pagina/berichten?p={page_number}'
+                            urls.append(url)
+            volunteers_names = []
+            for url in urls:
+                response = SessionManager.get_session().get(url, headers=headers)
                 soup = BeautifulSoup(response.text, 'html.parser')
-                paginator = soup.find('div', {'class': 'paginator'})
+                volunteers = soup.find_all('a', {'aria-labelledby': 'message-of-label'})
+                for volunteer_name in volunteers:
+                    volunteers_names.append(volunteer_name.text)
 
-                if paginator:
-                    pages = paginator.find_all('a')
-                    for page in pages:
-                        if not page.text.isalpha():
-                            page_number = int(page.text)
-                            if page_number > 1:
-                                url = f'https://www.nlvoorelkaar.nl/mijn-pagina/berichten?p={page_number}'
-                                urls.append(url)
-                volunteers_names = []
-                volunteers_ids = []
-                for url in urls:
-                    response = SessionManager.get_session().get(url, headers=headers)
-                    soup = BeautifulSoup(response.text, 'html.parser')
-                    volunteers = soup.find_all('a', {'aria-labelledby': 'message-of-label'})
-                    for volunteer_name in volunteers:
-                        volunteers_names.append(volunteer_name.text)
+            result = StringLists(volunteers_names, urls)
+            return result
 
-                result = StringLists(volunteers_names, urls)
-                return result
 
-        except Exception as e:
-            print(f'Error while collecting contacted names: {str(e)}')
-            return False
 
     @staticmethod
     def check_with_frequency(str_date, frequency):
@@ -181,34 +170,40 @@ class ReminderService:
                 return: bool: True if the message was sent successfully, False otherwise
             """
 
-        if chat_url:
-            try:
-                response = SessionManager.get_session().get(chat_url, headers=headers)
+        profile_url = get_offer_url_from_chat_page(chat_url)
+        profile_id = get_profile_id(profile_url)
+
+        if self.blService.check_if_was_blacklisted(profile_id) or not profile_id:
+            print(f"Volunteer with id {profile_id} was blacklisted")
+            return
+
+        try:
+            response = SessionManager.get_session().get(chat_url, headers=headers)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                message_token = soup.find('input', {'name': 'message[_token]'})['value']
+                message_loaded = soup.find('input', {'name': 'message[loaded]'})['value']
+
+                data = {
+                    'message[body]': message,
+                    'message[dusdat]': '',
+                    'message[_token]': message_token,
+                    'message[loaded]': message_loaded
+                }
+
+                time.sleep(randint(45, 75))
+                response = SessionManager.get_session().post(chat_url, data=data, headers=headers)
+
                 if response.status_code == 200:
-                    soup = BeautifulSoup(response.text, 'html.parser')
-                    message_token = soup.find('input', {'name': 'message[_token]'})['value']
-                    message_loaded = soup.find('input', {'name': 'message[loaded]'})['value']
+                    print(f'Reminder sent to {chat_url}', "Text: ", message)
 
-                    data = {
-                        'message[body]': message,
-                        'message[dusdat]': '',
-                        'message[_token]': message_token,
-                        'message[loaded]': message_loaded
-                    }
 
-                    time.sleep(randint(45, 75))
-                    response = SessionManager.get_session().post(chat_url, data=data, headers=headers)
+        except Exception as e:
+            logging.error(f'Error while sending reminder to chat with url {chat_url}: {str(e)}')
 
-                    if response.status_code == 200:
-                        print(f'Reminder sent to {chat_url}', "Text: ", message)
-                        return True
-
-            except Exception as e:
-                logging.error(f'Error while sending reminder to chat with url {chat_url}: {str(e)}')
-                return False
 
     def csv_handler(self, chats_with_no_response, reminder_frequency: int, reminder_message: Optional[str] = None):
-        if not chats_with_no_response:
+        if len(chats_with_no_response)<1:
             print("No chats with no response")
             return
 
@@ -299,7 +294,6 @@ class ReminderService:
 
             return: list of chat_urls with no response
             """
-
         names_urls_object = self.get_all_contacted_names()
         chats_with_no_response = set()
 
@@ -307,6 +301,7 @@ class ReminderService:
             volunteer_names = names_urls_object.names
 
             urls = names_urls_object.pages
+
 
             for url in urls:
                 response = SessionManager.get_session().get(url, headers=headers)
@@ -318,7 +313,7 @@ class ReminderService:
 
                     for chat in chats:
                         chat_url = chat.find('a', {'class': 'button button--primary button--detail'})
-                        if chat_url:  # Check if chat_url exists before accessing href
+                        if chat_url:
                             chat_url = "https://www.nlvoorelkaar.nl" + chat_url['href']
 
                             response = SessionManager.get_session().get(chat_url, headers=headers)

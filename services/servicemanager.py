@@ -163,8 +163,7 @@ class ServiceManager(ServiceManagerInterface):
         """
         Start the reminder service.
         """
-        print('Start reminder service from service manager')
-        self.reminder_service.start_reminder_service(reminder_frequency, custom_reminder_message)
+        self.reminder_service.run_reminder_service(reminder_frequency, custom_reminder_message)
 
     def get_unanswered_chats(self, reminder_frequency):
         """

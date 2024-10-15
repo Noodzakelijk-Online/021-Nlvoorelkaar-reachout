@@ -9,8 +9,6 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
-import speedtab as st
-
 SCOPES = ["https://www.googleapis.com/auth/drive"]
 mode = "production"  # "development"
 PATH = "./"
@@ -39,10 +37,9 @@ class GoogleDriveManager:
         if os.path.exists(f"{PATH}/token.json"):
             if Credentials.from_authorized_user_file(f"{PATH}/token.json", SCOPES) is not None:
                 self.creds = Credentials.from_authorized_user_file(f"{PATH}/token.json", SCOPES)
-                print("CREDS", self.creds)
                 if self.creds and self.creds.expired and self.creds.refresh_token:
                     try:
-                        print("PERFORMING REFRESH")
+                        print("Performing refresh")
                         self.creds.refresh(Request())
                     except Exception as e:
                         print(f"Failed to refresh token: {e}")
@@ -108,8 +105,8 @@ class GoogleDriveManager:
             return None
         query = f"name='{file_name}' and '{self.folder_id}' in parents"
         results = self.service.files().list(q=query,
-                                            spaces='drive',
-                                            fields="files(id, name)").execute()
+                                                spaces='drive',
+                                                fields="files(id, name)").execute()
         items = results.get('files', [])
         if not items:
             return None

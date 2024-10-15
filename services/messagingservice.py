@@ -5,7 +5,6 @@ from typing import Optional, List
 
 from google_drive.google_api_services import GoogleDriveManager
 from services.blacklistservice import BlacklistService
-from test import get_profile_id
 from utils.csv_util.csv_util import contact_date_to_csv, pre_send_message_check
 
 from config.settings import headers, url_volunteer, minimum_time, maximum_time, url_base
@@ -13,6 +12,8 @@ from controllers.logincontroller import LoginController
 from controllers.logincontrollerinterface import LoginControllerInterface
 from models.sessionmanager import SessionManager
 from bs4 import BeautifulSoup
+
+from utils.profile_id_extractor import get_profile_id
 
 
 class MessagingService:
