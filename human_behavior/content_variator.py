@@ -171,6 +171,12 @@ class DutchGreetings:
         """
         Get appropriate greeting for time of day
         
+        Time-based greetings (Dutch convention):
+        - Goedemorgen: 06:00 - 12:00
+        - Goedemiddag: 12:00 - 18:00
+        - Goedenavond: 18:00 - 00:00
+        - Neutral (Hallo/Beste): 00:00 - 06:00 (rare, but safe fallback)
+        
         Args:
             hour: Hour of day (0-23), None for current
             formal: Whether to prefer formal greetings
@@ -181,22 +187,32 @@ class DutchGreetings:
             hour = datetime.now().hour
         
         if formal:
+            # Formal greetings - use time-appropriate Dutch greetings
             if 6 <= hour < 12:
-                options = cls.MORNING[:2]
+                # Morning: 06:00 - 12:00
+                options = cls.MORNING[:2]  # Goedemorgen, Goede morgen
             elif 12 <= hour < 18:
-                options = cls.AFTERNOON[:2]
-            elif 18 <= hour < 22:
-                options = cls.EVENING[:2]
+                # Afternoon: 12:00 - 18:00
+                options = cls.AFTERNOON[:2]  # Goedemiddag, Goede middag
+            elif 18 <= hour < 24:
+                # Evening: 18:00 - 00:00 (midnight)
+                options = cls.EVENING[:2]  # Goedenavond, Goede avond
             else:
+                # Late night/early morning: 00:00 - 06:00 (use neutral)
                 options = ["Beste", "Hallo"]
         else:
+            # Informal greetings - include casual options
             if 6 <= hour < 12:
+                # Morning: 06:00 - 12:00
                 options = cls.MORNING
             elif 12 <= hour < 18:
+                # Afternoon: 12:00 - 18:00
                 options = cls.AFTERNOON
-            elif 18 <= hour < 22:
+            elif 18 <= hour < 24:
+                # Evening: 18:00 - 00:00 (midnight)
                 options = cls.EVENING
             else:
+                # Late night/early morning: 00:00 - 06:00
                 options = cls.NEUTRAL
         
         return random.choice(options)
