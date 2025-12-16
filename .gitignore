@@ -135,6 +135,31 @@ dmypy.json
 # ignore lab.py
 lab.py
 
-# credentials
+# Credentials and sensitive files - NEVER COMMIT
 .login_data
+credentials.json
+token.json
+*.key
+*.pem
+config.json
+secrets/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+data/
+message_queue.db
+
+# Log files
 logs/
+*.log
+
+# Backup files
+backups/
+*.backup
+*.bak
+
+# Local configuration
+local_config.py
+local_settings.py
