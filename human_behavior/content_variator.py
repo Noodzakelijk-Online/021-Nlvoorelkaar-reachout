@@ -174,46 +174,51 @@ class DutchGreetings:
         Time-based greetings (Dutch convention):
         - Goedemorgen: 06:00 - 12:00
         - Goedemiddag: 12:00 - 18:00
-        - Goedenavond: 18:00 - 00:00
-        - Neutral (Hallo/Beste): 00:00 - 06:00 (rare, but safe fallback)
+        - Goedenavond: 18:00 - 22:00 (operating hours end at 22:00)
+        
+        NOTE: Messages are ONLY sent during operating hours (09:00 - 22:00)
+        so we will never need greetings for 00:00 - 06:00.
         
         Args:
             hour: Hour of day (0-23), None for current
             formal: Whether to prefer formal greetings
+        
+        Raises:
+            ValueError: If called outside operating hours (should never happen)
         """
         from datetime import datetime
         
         if hour is None:
             hour = datetime.now().hour
         
+        # Safety check: We should NEVER be sending messages outside 09:00-22:00
+        if hour < 9 or hour >= 22:
+            logger.warning(f"get_greeting called outside operating hours (hour={hour}). This should not happen!")
+            # Fallback to neutral greeting if somehow called outside hours
+            return "Beste" if formal else "Hallo"
+        
         if formal:
             # Formal greetings - use time-appropriate Dutch greetings
-            if 6 <= hour < 12:
-                # Morning: 06:00 - 12:00
+            if 9 <= hour < 12:
+                # Morning: 09:00 - 12:00
                 options = cls.MORNING[:2]  # Goedemorgen, Goede morgen
             elif 12 <= hour < 18:
                 # Afternoon: 12:00 - 18:00
                 options = cls.AFTERNOON[:2]  # Goedemiddag, Goede middag
-            elif 18 <= hour < 24:
-                # Evening: 18:00 - 00:00 (midnight)
-                options = cls.EVENING[:2]  # Goedenavond, Goede avond
             else:
-                # Late night/early morning: 00:00 - 06:00 (use neutral)
-                options = ["Beste", "Hallo"]
+                # Evening: 18:00 - 22:00
+                options = cls.EVENING[:2]  # Goedenavond, Goede avond
         else:
             # Informal greetings - include casual options
-            if 6 <= hour < 12:
-                # Morning: 06:00 - 12:00
+            if 9 <= hour < 12:
+                # Morning: 09:00 - 12:00
                 options = cls.MORNING
             elif 12 <= hour < 18:
                 # Afternoon: 12:00 - 18:00
                 options = cls.AFTERNOON
-            elif 18 <= hour < 24:
-                # Evening: 18:00 - 00:00 (midnight)
-                options = cls.EVENING
             else:
-                # Late night/early morning: 00:00 - 06:00
-                options = cls.NEUTRAL
+                # Evening: 18:00 - 22:00
+                options = cls.EVENING
         
         return random.choice(options)
 
