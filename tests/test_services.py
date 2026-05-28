@@ -9,6 +9,8 @@ import sys
 import tempfile
 import sqlite3
 import json
+import gc
+from contextlib import closing
 from datetime import datetime, timedelta
 from unittest.mock import Mock, patch, MagicMock
 
@@ -25,6 +27,7 @@ class TestSecureCredentials(unittest.TestCase):
     
     def tearDown(self):
         import shutil
+        gc.collect()
         shutil.rmtree(self.temp_dir, ignore_errors=True)
     
     def test_credential_encryption(self):
@@ -106,16 +109,19 @@ class TestEnhancedSessionManager(unittest.TestCase):
     @patch('requests.Session.get')
     def test_retry_logic(self, mock_get):
         """Test retry logic on failure"""
+        import requests
         from models.enhanced_session_manager import EnhancedSessionManager
         
         # First two calls fail, third succeeds
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.text = 'success'
+        mock_response.history = []
+        mock_response.url = 'http://test.com'
         
         mock_get.side_effect = [
-            Exception("Network error"),
-            Exception("Network error"),
+            requests.exceptions.ConnectionError("Network error"),
+            requests.exceptions.ConnectionError("Network error"),
             mock_response
         ]
         
@@ -136,6 +142,7 @@ class TestMessageQueue(unittest.TestCase):
         self.temp_db = tempfile.mktemp(suffix='.db')
     
     def tearDown(self):
+        gc.collect()
         if os.path.exists(self.temp_db):
             os.remove(self.temp_db)
     
@@ -153,7 +160,8 @@ class TestMessageQueue(unittest.TestCase):
         )
         
         self.assertIsNotNone(msg_id)
-        self.assertGreater(msg_id, 0)
+        self.assertIsInstance(msg_id, str)
+        self.assertTrue(msg_id)
     
     def test_get_pending_messages(self):
         """Test getting pending messages"""
@@ -162,8 +170,8 @@ class TestMessageQueue(unittest.TestCase):
         queue = MessageQueue(self.temp_db)
         
         # Queue multiple messages
-        queue.enqueue('vol_1', 'User 1', 'Subject 1', 'Body 1')
-        queue.enqueue('vol_2', 'User 2', 'Subject 2', 'Body 2')
+        queue.enqueue(recipient_id='vol_1', recipient_name='User 1', subject='Subject 1', body='Body 1')
+        queue.enqueue(recipient_id='vol_2', recipient_name='User 2', subject='Subject 2', body='Body 2')
         
         pending = queue.get_pending(limit=10)
         
@@ -175,7 +183,7 @@ class TestMessageQueue(unittest.TestCase):
         
         queue = MessageQueue(self.temp_db)
         
-        msg_id = queue.enqueue('vol_1', 'User', 'Subject', 'Body')
+        msg_id = queue.enqueue(recipient_id='vol_1', recipient_name='User', subject='Subject', body='Body')
         queue.mark_sent(msg_id)
         
         pending = queue.get_pending()
@@ -190,12 +198,13 @@ class TestEnhancedVolunteerService(unittest.TestCase):
         self._init_db()
     
     def tearDown(self):
+        gc.collect()
         if os.path.exists(self.temp_db):
             os.remove(self.temp_db)
     
     def _init_db(self):
         """Initialize test database"""
-        with sqlite3.connect(self.temp_db) as conn:
+        with closing(sqlite3.connect(self.temp_db)) as conn:
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS volunteers (
                     id INTEGER PRIMARY KEY,
@@ -238,7 +247,7 @@ class TestEnhancedVolunteerService(unittest.TestCase):
         service.save_volunteer(volunteer)
         
         # Verify saved
-        with sqlite3.connect(self.temp_db) as conn:
+        with closing(sqlite3.connect(self.temp_db)) as conn:
             cursor = conn.execute(
                 'SELECT name FROM volunteers WHERE profile_id = ?',
                 ('vol_123',)
@@ -263,7 +272,7 @@ class TestEnhancedVolunteerService(unittest.TestCase):
         service.save_volunteer(volunteer)
         
         # Should only have one record
-        with sqlite3.connect(self.temp_db) as conn:
+        with closing(sqlite3.connect(self.temp_db)) as conn:
             cursor = conn.execute('SELECT COUNT(*) FROM volunteers')
             count = cursor.fetchone()[0]
             self.assertEqual(count, 1)
@@ -276,6 +285,7 @@ class TestEnhancedMessagingService(unittest.TestCase):
         self.temp_db = tempfile.mktemp(suffix='.db')
     
     def tearDown(self):
+        gc.collect()
         if os.path.exists(self.temp_db):
             os.remove(self.temp_db)
     
@@ -317,13 +327,14 @@ class TestDataExporter(unittest.TestCase):
     
     def tearDown(self):
         import shutil
+        gc.collect()
         if os.path.exists(self.temp_db):
             os.remove(self.temp_db)
         shutil.rmtree(self.temp_dir, ignore_errors=True)
     
     def _init_db(self):
         """Initialize test database with sample data"""
-        with sqlite3.connect(self.temp_db) as conn:
+        with closing(sqlite3.connect(self.temp_db)) as conn:
             conn.execute('''
                 CREATE TABLE volunteers (
                     id INTEGER PRIMARY KEY,
@@ -396,12 +407,13 @@ class TestReportGenerator(unittest.TestCase):
         self._init_db()
     
     def tearDown(self):
+        gc.collect()
         if os.path.exists(self.temp_db):
             os.remove(self.temp_db)
     
     def _init_db(self):
         """Initialize test database"""
-        with sqlite3.connect(self.temp_db) as conn:
+        with closing(sqlite3.connect(self.temp_db)) as conn:
             conn.executescript('''
                 CREATE TABLE volunteers (
                     id INTEGER PRIMARY KEY,
@@ -477,6 +489,7 @@ class TestEnhancedLogging(unittest.TestCase):
     
     def tearDown(self):
         import shutil
+        gc.collect()
         shutil.rmtree(self.temp_dir, ignore_errors=True)
     
     def test_log_file_creation(self):
@@ -517,12 +530,13 @@ class TestBlacklistService(unittest.TestCase):
         self._init_db()
     
     def tearDown(self):
+        gc.collect()
         if os.path.exists(self.temp_db):
             os.remove(self.temp_db)
     
     def _init_db(self):
         """Initialize test database"""
-        with sqlite3.connect(self.temp_db) as conn:
+        with closing(sqlite3.connect(self.temp_db)) as conn:
             conn.execute('''
                 CREATE TABLE blacklist (
                     id INTEGER PRIMARY KEY,
@@ -558,7 +572,7 @@ class TestBlacklistService(unittest.TestCase):
         service = EnhancedBlacklistService(self.temp_db)
         
         # Add with expiration in the past
-        with sqlite3.connect(self.temp_db) as conn:
+        with closing(sqlite3.connect(self.temp_db)) as conn:
             conn.execute('''
                 INSERT INTO blacklist (profile_id, name, reason, added_at, expires_at, is_permanent)
                 VALUES (?, ?, ?, ?, ?, ?)
@@ -578,3 +592,4 @@ class TestBlacklistService(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+

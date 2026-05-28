@@ -15,8 +15,12 @@ from dataclasses import dataclass, asdict
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-import keyring
 import re
+
+try:
+    import keyring
+except ImportError:
+    keyring = None
 
 logger = logging.getLogger(__name__)
 
@@ -146,27 +150,28 @@ class SecureCredentialManager:
         Args:
             master_password: Optional master password for encryption
         """
-        self._master_password = master_password
+        self._master_password = None
         self._fernet: Optional[Fernet] = None
-        self._credentials_file = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)),
-            '.credentials.enc'
-        )
+        if master_password and os.path.splitext(str(master_password))[1]:
+            self._credentials_file = str(master_password)
+        else:
+            self._master_password = master_password
+            self._credentials_file = os.path.join(
+                os.path.dirname(os.path.dirname(__file__)),
+                '.credentials.enc'
+            )
         self._metadata_file = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)),
+            os.path.dirname(self._credentials_file) or os.path.dirname(os.path.dirname(__file__)),
             '.credentials.meta'
         )
         
-        if master_password:
-            self._init_encryption(master_password)
+        if self._master_password:
+            self._init_encryption(self._master_password)
     
     def _init_encryption(self, master_password: str) -> None:
         """Initialize encryption with master password"""
         # Generate salt (or load existing)
-        salt_file = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)),
-            '.salt'
-        )
+        salt_file = os.path.join(os.path.dirname(self._credentials_file), '.salt')
         
         if os.path.exists(salt_file):
             with open(salt_file, 'rb') as f:
@@ -230,6 +235,8 @@ class SecureCredentialManager:
                 os.chmod(self._credentials_file, 0o600)
             else:
                 # Use system keyring as fallback
+                if keyring is None:
+                    return False, "Keyring is not installed and no master password was provided"
                 keyring.set_password(KEYRING_SERVICE, 'email', email)
                 keyring.set_password(KEYRING_SERVICE, 'password', password)
             
@@ -254,6 +261,16 @@ class SecureCredentialManager:
         except Exception as e:
             logger.error(f"Error storing credentials: {e}")
             return False, f"Fout bij opslaan inloggegevens: {str(e)}"
+
+    def store_credential(self, service: str, key: str, value: str) -> None:
+        """Backward-compatible single-value credential storage."""
+        current = self._load_credential_bundle()
+        current.setdefault(service, {})[key] = value
+        self._save_credential_bundle(current)
+
+    def get_credential(self, service: str, key: str) -> Optional[str]:
+        """Backward-compatible single-value credential retrieval."""
+        return self._load_credential_bundle().get(service, {}).get(key)
     
     def get_credentials(self) -> Tuple[Optional[str], Optional[str]]:
         """
@@ -272,6 +289,8 @@ class SecureCredentialManager:
                 return credentials.get('email'), credentials.get('password')
             else:
                 # Try system keyring
+                if keyring is None:
+                    return None, None
                 email = keyring.get_password(KEYRING_SERVICE, 'email')
                 password = keyring.get_password(KEYRING_SERVICE, 'password')
                 return email, password
@@ -389,11 +408,12 @@ class SecureCredentialManager:
                 os.remove(self._credentials_file)
             
             # Delete from keyring
-            try:
-                keyring.delete_password(KEYRING_SERVICE, 'email')
-                keyring.delete_password(KEYRING_SERVICE, 'password')
-            except keyring.errors.PasswordDeleteError:
-                pass
+            if keyring is not None:
+                try:
+                    keyring.delete_password(KEYRING_SERVICE, 'email')
+                    keyring.delete_password(KEYRING_SERVICE, 'password')
+                except keyring.errors.PasswordDeleteError:
+                    pass
             
             # Delete metadata
             if os.path.exists(self._metadata_file):
@@ -450,6 +470,25 @@ class SecureCredentialManager:
             os.chmod(self._metadata_file, 0o600)
         except Exception as e:
             logger.error(f"Error saving metadata: {e}")
+
+    def _load_credential_bundle(self) -> Dict[str, Dict[str, str]]:
+        if not self._fernet:
+            raise ValueError("Master password is required before using encrypted credential storage")
+        if not os.path.exists(self._credentials_file):
+            return {}
+
+        with open(self._credentials_file, 'rb') as f:
+            encrypted = f.read()
+        return json.loads(self._fernet.decrypt(encrypted).decode())
+
+    def _save_credential_bundle(self, data: Dict[str, Dict[str, str]]) -> None:
+        if not self._fernet:
+            raise ValueError("Master password is required before using encrypted credential storage")
+        os.makedirs(os.path.dirname(self._credentials_file) or '.', exist_ok=True)
+        encrypted = self._fernet.encrypt(json.dumps(data).encode())
+        with open(self._credentials_file, 'wb') as f:
+            f.write(encrypted)
+        os.chmod(self._credentials_file, 0o600)
 
 
 # Convenience function for backward compatibility

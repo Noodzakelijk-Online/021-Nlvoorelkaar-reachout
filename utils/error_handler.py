@@ -200,6 +200,22 @@ class ErrorHandler:
     def register_callback(self, callback: Callable[[AppError], None]) -> None:
         """Register a callback for error notifications"""
         self._error_callbacks.append(callback)
+
+    def categorize_error(self, error: Exception) -> ErrorCategory:
+        """Infer a broad category for a raw exception."""
+        if isinstance(error, AppError):
+            return error.category
+        if isinstance(error, (ConnectionError, TimeoutError)):
+            return ErrorCategory.NETWORK
+        if isinstance(error, PermissionError):
+            return ErrorCategory.AUTHENTICATION
+        if isinstance(error, ValueError):
+            return ErrorCategory.VALIDATION
+        return ErrorCategory.UNKNOWN
+
+    def get_user_message(self, category: ErrorCategory) -> str:
+        """Return a user-facing message for an error category."""
+        return AppError("", category=category)._get_user_friendly_message()
     
     def handle_error(
         self,

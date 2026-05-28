@@ -15,6 +15,7 @@ from dataclasses import dataclass, field, asdict
 from queue import PriorityQueue
 import sqlite3
 import os
+from contextlib import closing
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +126,7 @@ class MessageQueue:
     
     def _init_db(self) -> None:
         """Initialize the message queue database"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS messages (
                     id TEXT PRIMARY KEY,
@@ -162,7 +163,7 @@ class MessageQueue:
     
     def _load_pending_messages(self) -> None:
         """Load pending messages from database into queue"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute('''
                 SELECT * FROM messages 
@@ -184,7 +185,7 @@ class MessageQueue:
     
     def _save_message(self, message: Message) -> None:
         """Save message to database"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute('''
                 INSERT OR REPLACE INTO messages 
                 (id, recipient_id, recipient_name, subject, body, phone_number,
@@ -217,6 +218,7 @@ class MessageQueue:
         recipient_id: str,
         body: str,
         recipient_name: str = "",
+        subject: str = "",
         phone_number: str = "",
         campaign_id: Optional[int] = None,
         priority: MessagePriority = MessagePriority.NORMAL,
@@ -230,6 +232,7 @@ class MessageQueue:
             recipient_id: Volunteer ID to send message to
             body: Message body text
             recipient_name: Optional recipient name for personalization
+            subject: Optional message subject
             phone_number: Optional phone number
             campaign_id: Optional campaign ID
             priority: Message priority
@@ -242,6 +245,7 @@ class MessageQueue:
         message = Message(
             recipient_id=recipient_id,
             recipient_name=recipient_name,
+            subject=subject,
             body=body,
             phone_number=phone_number,
             campaign_id=campaign_id,
@@ -282,6 +286,7 @@ class MessageQueue:
                 recipient_id=msg_data['recipient_id'],
                 body=msg_data['body'],
                 recipient_name=msg_data.get('recipient_name', ''),
+                subject=msg_data.get('subject', ''),
                 phone_number=msg_data.get('phone_number', ''),
                 campaign_id=campaign_id or msg_data.get('campaign_id'),
                 priority=msg_data.get('priority', MessagePriority.NORMAL),
@@ -295,7 +300,7 @@ class MessageQueue:
     
     def get_message(self, message_id: str) -> Optional[Message]:
         """Get a message by ID"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
                 'SELECT * FROM messages WHERE id = ?',
@@ -307,6 +312,22 @@ class MessageQueue:
                 return self._row_to_message(row)
         
         return None
+
+    def get_pending(self, limit: int = 100) -> List[Message]:
+        """Compatibility helper: return pending, queued, or scheduled messages."""
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute('''
+                SELECT * FROM messages
+                WHERE status IN ('pending', 'queued', 'scheduled')
+                ORDER BY priority ASC, created_at ASC
+                LIMIT ?
+            ''', (limit,))
+            return [self._row_to_message(row) for row in cursor]
+
+    def mark_sent(self, message_id: str) -> None:
+        """Compatibility helper: mark a message as sent."""
+        self.update_status(message_id, MessageStatus.SENT)
     
     def update_status(
         self,
@@ -315,7 +336,7 @@ class MessageQueue:
         error_message: Optional[str] = None
     ) -> None:
         """Update message status"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             updates = {'status': status.value}
             
             if status == MessageStatus.SENT:
@@ -457,7 +478,7 @@ class MessageQueue:
     
     def get_queue_stats(self) -> Dict[str, Any]:
         """Get queue statistics"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute('''
                 SELECT status, COUNT(*) as count 
                 FROM messages 
@@ -475,7 +496,7 @@ class MessageQueue:
     
     def get_campaign_stats(self, campaign_id: int) -> Dict[str, Any]:
         """Get statistics for a specific campaign"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute('''
                 SELECT status, COUNT(*) as count 
                 FROM messages 
@@ -493,3 +514,4 @@ class MessageQueue:
             'failed_count': status_counts.get('failed', 0),
             'pending_count': status_counts.get('pending', 0) + status_counts.get('queued', 0)
         }
+

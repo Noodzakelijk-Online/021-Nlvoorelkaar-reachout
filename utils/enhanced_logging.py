@@ -145,7 +145,9 @@ class LoggerManager:
         root_logger.setLevel(level)
         
         # Clear existing handlers
-        root_logger.handlers = []
+        for handler in root_logger.handlers[:]:
+            root_logger.removeHandler(handler)
+            handler.close()
         
         # Add console handler
         if console_output:
@@ -332,15 +334,21 @@ class PerformanceLogger:
 def setup_logging(
     level: int = logging.INFO,
     console: bool = True,
-    file: bool = True
-) -> None:
+    file: bool = True,
+    log_file: Optional[str] = None
+) -> logging.Logger:
     """Quick setup for logging"""
     manager = LoggerManager()
+    log_dir = os.path.dirname(log_file) if log_file else None
+    if log_file:
+        manager.DEFAULT_LOG_FILE = os.path.basename(log_file)
     manager.configure(
+        log_dir=log_dir,
         level=level,
         console_output=console,
         file_output=file
     )
+    return logging.getLogger()
 
 
 def get_logger(name: str) -> logging.Logger:

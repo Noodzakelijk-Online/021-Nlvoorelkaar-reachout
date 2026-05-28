@@ -9,6 +9,7 @@ __pycache__/
 # Distribution / packaging
 .Python
 build/
+dist/
 develop-eggs/
 
 downloads/
@@ -137,8 +138,13 @@ lab.py
 
 # Credentials and sensitive files - NEVER COMMIT
 .login_data
+.credentials.enc
+.credentials.meta
+.salt
 credentials.json
 token.json
+client_secret*.json
+oauth*.json
 *.key
 *.pem
 config.json

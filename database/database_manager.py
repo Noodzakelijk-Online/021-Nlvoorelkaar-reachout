@@ -6,6 +6,7 @@ Handles SQLite database operations and schema management
 import sqlite3
 import os
 import logging
+from contextlib import closing
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 
@@ -363,22 +364,26 @@ class DatabaseManager:
     def cleanup_old_data(self, days: int = 365) -> bool:
         """Clean up old data beyond retention period"""
         try:
+            days = int(days)
+            if days < 1:
+                raise ValueError("days must be positive")
+            retention = f"-{days} days"
             with self.get_connection() as conn:
                 # Remove old contacts
                 conn.execute('''
                     DELETE FROM contacts 
-                    WHERE contact_date < datetime('now', '-{} days')
-                '''.format(days))
+                    WHERE contact_date < datetime('now', ?)
+                ''', (retention,))
                 
                 # Remove volunteers not contacted in the retention period
                 conn.execute('''
                     DELETE FROM volunteers 
                     WHERE volunteer_id NOT IN (
                         SELECT DISTINCT volunteer_id FROM contacts 
-                        WHERE contact_date >= datetime('now', '-{} days')
+                        WHERE contact_date >= datetime('now', ?)
                     )
-                    AND updated_at < datetime('now', '-{} days')
-                '''.format(days, days))
+                    AND updated_at < datetime('now', ?)
+                ''', (retention, retention))
                 
                 conn.commit()
                 logger.info(f"Cleaned up data older than {days} days")
@@ -387,4 +392,5 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to cleanup old data: {e}")
             return False
+
 

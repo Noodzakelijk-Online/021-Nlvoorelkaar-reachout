@@ -7,6 +7,7 @@ import os
 import csv
 import json
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Any, Callable
 from dataclasses import dataclass, asdict
@@ -94,7 +95,7 @@ class DataExporter:
         query += " ORDER BY last_seen DESC"
         
         # Fetch data
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(query, params)
             rows = [dict(row) for row in cursor]
@@ -127,7 +128,7 @@ class DataExporter:
         
         query += " ORDER BY created_at DESC"
         
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(query, params)
             rows = [dict(row) for row in cursor]
@@ -152,7 +153,7 @@ class DataExporter:
         """Export blacklist to file"""
         config = config or ExportConfig()
         
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute("SELECT * FROM blacklist ORDER BY added_at DESC")
             rows = [dict(row) for row in cursor]
@@ -306,7 +307,7 @@ class DataImporter:
         
         total = len(rows)
         
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             for idx, row in enumerate(rows):
                 try:
                     result = self._import_volunteer_row(conn, row)
@@ -398,7 +399,7 @@ class DataImporter:
         else:
             raise ValueError(f"Unsupported format: {ext}")
         
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             for row in rows:
                 try:
                     profile_id = row.get('profile_id', '').strip()
@@ -536,7 +537,7 @@ class ReportGenerator:
             'sections': {}
         }
         
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             # Volunteer statistics
             report['sections']['volunteers'] = self._get_volunteer_stats(
                 conn, period_obj
@@ -773,7 +774,7 @@ class DataCleanup:
         """Remove notifications older than specified days"""
         cutoff = (datetime.now() - timedelta(days=days)).isoformat()
         
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute(
                 'DELETE FROM notifications WHERE created_at < ?',
                 (cutoff,)
@@ -785,7 +786,7 @@ class DataCleanup:
         """Remove old sent messages"""
         cutoff = (datetime.now() - timedelta(days=days)).isoformat()
         
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute(
                 'DELETE FROM scheduled_messages WHERE status = ? AND sent_at < ?',
                 ('sent', cutoff)
@@ -797,7 +798,7 @@ class DataCleanup:
         """Mark volunteers as inactive if not seen recently"""
         cutoff = (datetime.now() - timedelta(days=days)).isoformat()
         
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute(
                 'UPDATE volunteers SET is_active = 0 WHERE last_seen < ? AND is_active = 1',
                 (cutoff,)
@@ -807,7 +808,7 @@ class DataCleanup:
     
     def optimize_database(self) -> None:
         """Optimize database (vacuum and analyze)"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute('VACUUM')
             conn.execute('ANALYZE')
         
@@ -821,7 +822,7 @@ class DataCleanup:
         if os.path.exists(self.db_path):
             stats['file_size_mb'] = os.path.getsize(self.db_path) / (1024 * 1024)
         
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             # Table counts
             tables = ['volunteers', 'scheduled_messages', 'reminders', 
                      'blacklist', 'notifications']
@@ -834,3 +835,4 @@ class DataCleanup:
                     stats[f'{table}_count'] = 0
         
         return stats
+

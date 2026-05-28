@@ -8,6 +8,7 @@ import re
 import json
 import logging
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Any, Callable
 from dataclasses import dataclass, asdict, field
@@ -138,7 +139,7 @@ Met vriendelijke groet''',
     
     def _init_db(self) -> None:
         """Initialize template database"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS message_templates (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -157,7 +158,7 @@ Met vriendelijke groet''',
     
     def _init_default_templates(self) -> None:
         """Initialize default templates if none exist"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute('SELECT COUNT(*) FROM message_templates')
             if cursor.fetchone()[0] == 0:
                 now = datetime.now().isoformat()
@@ -195,7 +196,7 @@ Met vriendelijke groet''',
         now = datetime.now().isoformat()
         variables = self._extract_variables(body + subject)
         
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute('''
                 INSERT INTO message_templates 
                 (name, subject, body, category, variables, created_at, updated_at)
@@ -246,7 +247,7 @@ Met vriendelijke groet''',
         params.append(datetime.now().isoformat())
         params.append(template_id)
         
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute(
                 f'UPDATE message_templates SET {", ".join(updates)} WHERE id = ?',
                 params
@@ -257,7 +258,7 @@ Met vriendelijke groet''',
     
     def get_template(self, template_id: int) -> Optional[MessageTemplate]:
         """Get a template by ID"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
                 'SELECT * FROM message_templates WHERE id = ?',
@@ -277,7 +278,7 @@ Met vriendelijke groet''',
         active_only: bool = True
     ) -> List[MessageTemplate]:
         """Get all templates"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             
             query = 'SELECT * FROM message_templates WHERE 1=1'
@@ -303,7 +304,7 @@ Met vriendelijke groet''',
     
     def delete_template(self, template_id: int) -> bool:
         """Soft delete a template"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute(
                 'UPDATE message_templates SET is_active = 0 WHERE id = ?',
                 (template_id,)
@@ -313,7 +314,7 @@ Met vriendelijke groet''',
     
     def increment_use_count(self, template_id: int) -> None:
         """Increment template use count"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute(
                 'UPDATE message_templates SET use_count = use_count + 1 WHERE id = ?',
                 (template_id,)
@@ -382,7 +383,7 @@ class MessageScheduler:
     
     def _init_db(self) -> None:
         """Initialize scheduler database"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS scheduled_messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -449,7 +450,7 @@ class MessageScheduler:
         
         now = datetime.now().isoformat()
         
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute('''
                 INSERT INTO scheduled_messages 
                 (template_id, recipient_id, recipient_name, subject, body,
@@ -530,7 +531,7 @@ class MessageScheduler:
         """Get messages ready to be sent"""
         now = datetime.now().isoformat()
         
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute('''
                 SELECT * FROM scheduled_messages 
@@ -555,7 +556,7 @@ class MessageScheduler:
         limit: int = 100
     ) -> List[ScheduledMessage]:
         """Get scheduled messages"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             
             query = 'SELECT * FROM scheduled_messages'
@@ -583,7 +584,7 @@ class MessageScheduler:
     
     def cancel_message(self, message_id: int) -> bool:
         """Cancel a scheduled message"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute(
                 'UPDATE scheduled_messages SET status = ? WHERE id = ? AND status = ?',
                 ('cancelled', message_id, 'scheduled')
@@ -598,7 +599,7 @@ class MessageScheduler:
         error_message: Optional[str] = None
     ) -> None:
         """Update message status"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             if status == 'sent':
                 conn.execute(
                     'UPDATE scheduled_messages SET status = ?, sent_at = ? WHERE id = ?',
@@ -822,7 +823,7 @@ class EnhancedMessagingService:
     - Delivery tracking
     """
     
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: Optional[str] = None, send_callback: Optional[Callable] = None):
         self.db_path = db_path or os.path.join(
             os.path.dirname(os.path.dirname(__file__)),
             'data',
@@ -836,6 +837,30 @@ class EnhancedMessagingService:
         self.templates = MessageTemplateManager(self.db_path)
         self.scheduler = MessageScheduler(self.db_path)
         self.preview = MessagePreview()
+        if send_callback:
+            self.scheduler.set_send_callback(send_callback)
+
+    def render_template(self, template: str, variables: Dict[str, str]) -> str:
+        """Render an ad-hoc template string with variable substitution."""
+        rendered = template
+        for name, value in variables.items():
+            rendered = rendered.replace("{" + name + "}", str(value))
+        return rendered
+
+    def validate_template(self, template: str) -> Dict[str, Any]:
+        """Validate basic brace balance and preview constraints for an ad-hoc template."""
+        if template.count("{") != template.count("}"):
+            return {
+                "is_valid": False,
+                "errors": ["Template contains unmatched braces"]
+            }
+
+        preview = self.preview.preview(template)
+        return {
+            "is_valid": preview["is_valid"],
+            "errors": [issue["message"] for issue in preview["issues"] if issue["severity"] == "error"],
+            "warnings": [issue["message"] for issue in preview["issues"] if issue["severity"] == "warning"]
+        }
     
     def create_and_schedule_message(
         self,
@@ -900,3 +925,4 @@ class EnhancedMessagingService:
     def stop(self) -> None:
         """Stop the messaging service"""
         self.scheduler.stop_scheduler()
+

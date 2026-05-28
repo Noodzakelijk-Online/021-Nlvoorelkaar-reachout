@@ -6,7 +6,6 @@ Handles encryption and decryption of user credentials locally
 import os
 import json
 import base64
-import hashlib
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -16,9 +15,13 @@ logger = logging.getLogger(__name__)
 
 class CredentialManager:
     def __init__(self, data_dir="data"):
-        self.data_dir = data_dir
-        self.credentials_file = os.path.join(data_dir, "credentials.enc")
-        self.salt_file = os.path.join(data_dir, "salt.key")
+        if os.path.splitext(data_dir)[1]:
+            self.data_dir = os.path.dirname(data_dir) or "."
+            self.credentials_file = data_dir
+        else:
+            self.data_dir = data_dir
+            self.credentials_file = os.path.join(data_dir, "credentials.enc")
+        self.salt_file = os.path.join(self.data_dir, "salt.key")
         self._ensure_data_dir()
         
     def _ensure_data_dir(self):
@@ -46,8 +49,16 @@ class CredentialManager:
             salt = os.urandom(16)
             with open(self.salt_file, 'wb') as f:
                 f.write(salt)
-            os.chmod(self.salt_file, 0o600)  # Secure permissions
+            self._chmod_private(self.salt_file)
             return salt
+
+    @staticmethod
+    def _chmod_private(path: str) -> None:
+        """Apply private file permissions on platforms that support chmod."""
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            logger.debug("Could not set private permissions on %s", path)
             
     def save_credentials(self, username: str, password: str, master_password: str) -> bool:
         """Save encrypted credentials"""
@@ -66,7 +77,7 @@ class CredentialManager:
             
             with open(self.credentials_file, 'wb') as f:
                 f.write(encrypted_data)
-            os.chmod(self.credentials_file, 0o600)  # Secure permissions
+            self._chmod_private(self.credentials_file)
             
             logger.info("Credentials saved successfully")
             return True
@@ -143,4 +154,50 @@ class CredentialManager:
         except Exception as e:
             logger.error(f"Failed to change master password: {e}")
             return False
+
+    def has_credentials(self, service: str = "default") -> bool:
+        """Compatibility helper for enhanced entry points."""
+        return self.credentials_exist()
+
+    def store_credentials(self, service: str, credentials: dict, master_password: str = None) -> bool:
+        """
+        Store a service credential bundle.
+
+        Existing UI flows use save_credentials(username, password, master_password).
+        Enhanced CLI flows pass a service name and a dictionary. For those flows,
+        use NLVE_MASTER_PASSWORD or the service name as a migration fallback.
+        """
+        master = master_password or os.environ.get("NLVE_MASTER_PASSWORD") or service
+        username = credentials.get("username") or credentials.get("email") or credentials.get("user", "")
+        password = credentials.get("password", "")
+        payload = {
+            "username": username,
+            "password": password,
+            "service": service,
+            "extra": {k: v for k, v in credentials.items() if k not in {"username", "email", "user", "password"}}
+        }
+
+        try:
+            salt = self._get_or_create_salt()
+            fernet = Fernet(self._derive_key(master, salt))
+            with open(self.credentials_file, "wb") as f:
+                f.write(fernet.encrypt(json.dumps(payload).encode()))
+            self._chmod_private(self.credentials_file)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to store credentials for {service}: {e}")
+            return False
+
+    def get_credentials(self, service: str = "default", master_password: str = None) -> dict:
+        """Compatibility helper for enhanced services."""
+        master = master_password or os.environ.get("NLVE_MASTER_PASSWORD") or service
+        credentials = self.load_credentials(master)
+        if not credentials:
+            return {}
+        if credentials.get("service") and credentials.get("service") != service:
+            return {}
+        result = credentials.get("extra", {}).copy()
+        result["username"] = credentials.get("username")
+        result["password"] = credentials.get("password")
+        return result
 

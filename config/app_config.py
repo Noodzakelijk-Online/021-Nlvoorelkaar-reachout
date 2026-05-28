@@ -182,6 +182,12 @@ Best wishes"""
         cls.ensure_directories()
         return cls.BACKUP_DIR
 
+    @classmethod
+    def get_credentials_path(cls) -> str:
+        """Get encrypted credentials file path."""
+        cls.ensure_directories()
+        return os.path.join(cls.DATA_DIR, "credentials.enc")
+
 # Environment-specific configurations
 class DevelopmentConfig(AppConfig):
     """Development environment configuration"""

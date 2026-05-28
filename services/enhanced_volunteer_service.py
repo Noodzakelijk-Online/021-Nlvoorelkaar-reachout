@@ -9,6 +9,7 @@ import time
 import logging
 import hashlib
 import sqlite3
+from contextlib import closing
 import threading
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Any, Callable, Set
@@ -185,7 +186,7 @@ class VolunteerDeduplicator:
     
     def _init_db(self) -> None:
         """Initialize deduplication tables"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS volunteer_hashes (
                     hash TEXT PRIMARY KEY,
@@ -201,7 +202,7 @@ class VolunteerDeduplicator:
     
     def _load_existing_hashes(self) -> None:
         """Load existing hashes into memory"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute('SELECT hash FROM volunteer_hashes')
             self._seen_hashes = {row[0] for row in cursor}
         
@@ -243,7 +244,7 @@ class VolunteerDeduplicator:
         if volunteer_hash not in self._seen_hashes:
             self._seen_hashes.add(volunteer_hash)
             
-            with sqlite3.connect(self.db_path) as conn:
+            with closing(sqlite3.connect(self.db_path)) as conn:
                 conn.execute(
                     'INSERT OR IGNORE INTO volunteer_hashes (hash, volunteer_id, created_at) VALUES (?, ?, ?)',
                     (volunteer_hash, volunteer_id, datetime.now().isoformat())
@@ -273,7 +274,7 @@ class ProgressPersistence:
     
     def _init_db(self) -> None:
         """Initialize progress tables"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS scrape_sessions (
                     session_id TEXT PRIMARY KEY,
@@ -299,7 +300,7 @@ class ProgressPersistence:
         """Save scraping progress"""
         progress.last_updated = datetime.now().isoformat()
         
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute('''
                 INSERT OR REPLACE INTO scrape_sessions 
                 (session_id, status, total_pages, current_page, total_volunteers,
@@ -328,7 +329,7 @@ class ProgressPersistence:
     
     def load_progress(self, session_id: str) -> Optional[ScrapeProgress]:
         """Load scraping progress"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
                 'SELECT * FROM scrape_sessions WHERE session_id = ?',
@@ -346,7 +347,7 @@ class ProgressPersistence:
     
     def get_resumable_sessions(self) -> List[ScrapeProgress]:
         """Get all sessions that can be resumed"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute('''
                 SELECT * FROM scrape_sessions 
@@ -365,7 +366,7 @@ class ProgressPersistence:
     
     def delete_session(self, session_id: str) -> None:
         """Delete a scraping session"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute(
                 'DELETE FROM scrape_sessions WHERE session_id = ?',
                 (session_id,)
@@ -385,7 +386,7 @@ class EnhancedVolunteerService:
     - Detailed progress callbacks
     """
     
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: Optional[str] = None, progress_callback: Optional[Callable[[ScrapeProgress], None]] = None):
         self.db_path = db_path or os.path.join(
             os.path.dirname(os.path.dirname(__file__)),
             'data',
@@ -405,14 +406,14 @@ class EnhancedVolunteerService:
         self._current_progress: Optional[ScrapeProgress] = None
         self._is_running = False
         self._should_stop = False
-        self._progress_callback: Optional[Callable[[ScrapeProgress], None]] = None
+        self._progress_callback: Optional[Callable[[ScrapeProgress], None]] = progress_callback
         
         # Initialize database
         self._init_db()
     
     def _init_db(self) -> None:
         """Initialize volunteer database"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS volunteers (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -443,6 +444,17 @@ class EnhancedVolunteerService:
             conn.execute('''
                 CREATE INDEX IF NOT EXISTS idx_is_active ON volunteers(is_active)
             ''')
+
+            existing_columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(volunteers)")
+            }
+            for column_name, column_type in {
+                "raw_data": "TEXT",
+                "first_seen": "TEXT",
+                "last_updated": "TEXT"
+            }.items():
+                if column_name not in existing_columns:
+                    conn.execute(f"ALTER TABLE volunteers ADD COLUMN {column_name} {column_type}")
             
             conn.commit()
     
@@ -744,7 +756,7 @@ class EnhancedVolunteerService:
         """Save volunteer to database"""
         now = datetime.now().isoformat()
         
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             # Check if exists
             cursor = conn.execute(
                 'SELECT id FROM volunteers WHERE profile_id = ?',
@@ -772,7 +784,8 @@ class EnhancedVolunteerService:
                     volunteer_data['profile_id']
                 ))
                 conn.commit()
-                self._current_progress.updated_volunteers += 1
+                if self._current_progress:
+                    self._current_progress.updated_volunteers += 1
                 return existing[0]
             else:
                 # Insert new
@@ -794,6 +807,13 @@ class EnhancedVolunteerService:
                 ))
                 conn.commit()
                 return cursor.lastrowid
+
+    def save_volunteer(self, volunteer_data: Dict[str, Any]) -> Optional[int]:
+        """Public compatibility wrapper for saving one volunteer."""
+        if "profile_id" not in volunteer_data and "volunteer_id" in volunteer_data:
+            volunteer_data = volunteer_data.copy()
+            volunteer_data["profile_id"] = volunteer_data["volunteer_id"]
+        return self._save_volunteer(volunteer_data)
     
     def get_progress(self) -> Optional[ScrapeProgress]:
         """Get current scraping progress"""
@@ -801,7 +821,7 @@ class EnhancedVolunteerService:
     
     def get_volunteer_count(self) -> int:
         """Get total volunteer count in database"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute(
                 'SELECT COUNT(*) FROM volunteers WHERE is_active = 1'
             )
@@ -814,7 +834,7 @@ class EnhancedVolunteerService:
         location: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Get volunteers from database"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             
             query = 'SELECT * FROM volunteers WHERE is_active = 1'
@@ -829,3 +849,4 @@ class EnhancedVolunteerService:
             
             cursor = conn.execute(query, params)
             return [dict(row) for row in cursor]
+

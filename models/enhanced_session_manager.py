@@ -152,6 +152,11 @@ class EnhancedSessionManager:
         
         cls._last_request_time = time.time()
         cls._request_count += 1
+
+    @classmethod
+    def _apply_rate_limit(cls) -> None:
+        """Backward-compatible alias for older tests and callers."""
+        cls._apply_rate_limiting()
     
     @classmethod
     @retry_on_failure(max_retries=SessionConfig.MAX_RETRIES)
@@ -185,6 +190,11 @@ class EnhancedSessionManager:
             response = session.get(url, headers=headers, **kwargs)
         
         return response
+
+    @classmethod
+    def get_with_retry(cls, url: str, headers: Optional[Dict] = None, **kwargs) -> requests.Response:
+        """Backward-compatible alias for GET requests with retry behavior."""
+        return cls.get(url, headers=headers, **kwargs)
     
     @classmethod
     @retry_on_failure(max_retries=SessionConfig.MAX_RETRIES)

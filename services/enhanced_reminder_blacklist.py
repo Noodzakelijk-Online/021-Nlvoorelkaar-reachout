@@ -7,8 +7,9 @@ import os
 import json
 import logging
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timedelta
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, List, Any, Union
 from dataclasses import dataclass, asdict, field
 from enum import Enum
 
@@ -117,7 +118,7 @@ class EnhancedReminderService:
     
     def _init_db(self) -> None:
         """Initialize reminder database"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS reminders (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -187,7 +188,7 @@ class EnhancedReminderService:
         now = datetime.now()
         next_date = self._calculate_next_reminder_date(now, interval_days)
         
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute('''
                 INSERT INTO reminders 
                 (volunteer_id, volunteer_name, original_message_id, interval_days,
@@ -241,7 +242,7 @@ class EnhancedReminderService:
         """Get reminders that are due to be sent"""
         now = datetime.now().isoformat()
         
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute('''
                 SELECT * FROM reminders 
@@ -266,7 +267,7 @@ class EnhancedReminderService:
         """Mark a reminder as sent and schedule next"""
         now = datetime.now()
         
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             # Get current reminder
             cursor = conn.execute(
                 'SELECT * FROM reminders WHERE id = ?',
@@ -319,7 +320,7 @@ class EnhancedReminderService:
         """Mark that a response was received"""
         now = datetime.now()
         
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             # Update reminder status
             conn.execute('''
                 UPDATE reminders SET
@@ -353,7 +354,7 @@ class EnhancedReminderService:
     
     def cancel_reminder(self, reminder_id: int) -> bool:
         """Cancel a reminder"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute(
                 'UPDATE reminders SET status = ? WHERE id = ? AND status = ?',
                 ('cancelled', reminder_id, 'pending')
@@ -368,7 +369,7 @@ class EnhancedReminderService:
     
     def get_effectiveness_stats(self) -> Dict[str, Any]:
         """Get reminder effectiveness statistics"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             # Overall response rate
             cursor = conn.execute('''
                 SELECT 
@@ -461,7 +462,7 @@ class EnhancedBlacklistService:
     
     def _init_db(self) -> None:
         """Initialize blacklist database"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS blacklist (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -486,6 +487,16 @@ class EnhancedBlacklistService:
                 CREATE INDEX IF NOT EXISTS idx_blacklist_expires 
                 ON blacklist(expires_at)
             ''')
+
+            existing_columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(blacklist)")
+            }
+            for column_name, column_type in {
+                "added_by": "TEXT",
+                "contact_attempts": "INTEGER DEFAULT 0"
+            }.items():
+                if column_name not in existing_columns:
+                    conn.execute(f"ALTER TABLE blacklist ADD COLUMN {column_name} {column_type}")
             
             conn.commit()
     
@@ -493,7 +504,7 @@ class EnhancedBlacklistService:
         self,
         profile_id: str,
         name: str = "",
-        reason: BlacklistReason = BlacklistReason.OTHER,
+        reason: Union[BlacklistReason, str] = BlacklistReason.OTHER,
         notes: str = "",
         added_by: str = "",
         temporary_days: Optional[int] = None
@@ -513,6 +524,8 @@ class EnhancedBlacklistService:
             Blacklist entry ID
         """
         profile_id = profile_id.strip()
+        if isinstance(reason, str):
+            reason = BlacklistReason(reason)
         now = datetime.now()
         
         expires_at = None
@@ -522,7 +535,7 @@ class EnhancedBlacklistService:
             expires_at = (now + timedelta(days=temporary_days)).isoformat()
             is_permanent = False
         
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             try:
                 cursor = conn.execute('''
                     INSERT INTO blacklist 
@@ -563,7 +576,7 @@ class EnhancedBlacklistService:
         """Remove a profile from the blacklist"""
         profile_id = profile_id.strip()
         
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute(
                 'DELETE FROM blacklist WHERE profile_id = ?',
                 (profile_id,)
@@ -582,7 +595,7 @@ class EnhancedBlacklistService:
         # First, clean up expired entries
         self._cleanup_expired()
         
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute(
                 'SELECT id FROM blacklist WHERE profile_id = ?',
                 (profile_id,)
@@ -593,7 +606,7 @@ class EnhancedBlacklistService:
         """Remove expired temporary blacklist entries"""
         now = datetime.now().isoformat()
         
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute('''
                 DELETE FROM blacklist 
                 WHERE is_permanent = 0 AND expires_at IS NOT NULL AND expires_at < ?
@@ -607,7 +620,7 @@ class EnhancedBlacklistService:
     
     def get_blacklist_entry(self, profile_id: str) -> Optional[BlacklistEntry]:
         """Get blacklist entry details"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
                 'SELECT * FROM blacklist WHERE profile_id = ?',
@@ -645,7 +658,7 @@ class EnhancedBlacklistService:
         Returns:
             List of matching blacklist entries
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             
             conditions = []
@@ -754,7 +767,7 @@ class EnhancedBlacklistService:
     
     def get_stats(self) -> Dict[str, Any]:
         """Get blacklist statistics"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             # Total count
             cursor = conn.execute('SELECT COUNT(*) FROM blacklist')
             total = cursor.fetchone()[0]
@@ -791,10 +804,11 @@ class EnhancedBlacklistService:
     
     def increment_contact_attempts(self, profile_id: str) -> None:
         """Increment contact attempt counter"""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute('''
                 UPDATE blacklist 
                 SET contact_attempts = contact_attempts + 1 
                 WHERE profile_id = ?
             ''', (profile_id.strip(),))
             conn.commit()
+

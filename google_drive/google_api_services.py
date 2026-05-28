@@ -1,5 +1,6 @@
 import csv
 import io
+import logging
 import os
 import time
 
@@ -9,9 +10,14 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
-SCOPES = ["https://www.googleapis.com/auth/drive"]
-mode = "production"  # "development"
-PATH = "./"
+
+logger = logging.getLogger(__name__)
+
+SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+TOKEN_PATH = os.environ.get("NLVE_GOOGLE_TOKEN_PATH", os.path.join(DATA_DIR, "google_token.json"))
+CLIENT_SECRET_PATH = os.environ.get("NLVE_GOOGLE_CLIENT_SECRET_PATH", os.path.join(DATA_DIR, "google_credentials.json"))
 
 
 class GoogleDriveManager:
@@ -34,22 +40,33 @@ class GoogleDriveManager:
         self.setup()
 
     def setup(self):
-        if os.path.exists(f"{PATH}/token.json"):
-            if Credentials.from_authorized_user_file(f"{PATH}/token.json", SCOPES) is not None:
-                self.creds = Credentials.from_authorized_user_file(f"{PATH}/token.json", SCOPES)
-                if self.creds and self.creds.expired and self.creds.refresh_token:
-                    try:
-                        print("Performing refresh")
-                        self.creds.refresh(Request())
-                    except Exception as e:
-                        print(f"Failed to refresh token: {e}")
-                        self.creds = self.get_new_credentials()
-                elif not self.creds:
-                    print("GETTING NEW CREDS")
-                    self.creds = self.get_new_credentials()
+        os.makedirs(DATA_DIR, exist_ok=True)
 
-                with open(f"{PATH}/token.json", "w") as token:
-                    token.write(self.creds.to_json())
+        if os.path.exists(TOKEN_PATH):
+            self.creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+
+        if self.creds and self.creds.expired and self.creds.refresh_token:
+            try:
+                logger.info("Refreshing Google Drive token")
+                self.creds.refresh(Request())
+            except Exception as e:
+                logger.warning("Failed to refresh Google Drive token: %s", e)
+                self.creds = None
+
+        if not self.creds or not self.creds.valid:
+            try:
+                self.creds = self.get_new_credentials()
+            except FileNotFoundError as e:
+                logger.warning("%s", e)
+                return
+
+        if self.creds:
+            with open(TOKEN_PATH, "w") as token:
+                token.write(self.creds.to_json())
+            try:
+                os.chmod(TOKEN_PATH, 0o600)
+            except OSError:
+                logger.debug("Could not set private permissions on %s", TOKEN_PATH)
 
         try:
             service = build("drive", "v3", cache_discovery=False, credentials=self.creds)
@@ -73,21 +90,23 @@ class GoogleDriveManager:
             for file in files:
                 try:
                     existing_file = self.find_file_by_name(file)
-                    if existing_file:
-                        pass
-                    else:
+                    if not existing_file:
                         file_metadata = {"name": file, "parents": [self.folder_id]}
                         self.service.files().create(body=file_metadata, fields="id").execute()
                         time.sleep(1)
                 except HttpError as error:
-                    print("An error occurred: %s" % error)
+                    logger.error("Google Drive setup failed for %s: %s", file, error)
 
         except Exception as e:
-            print("An error occurred: %s" % e)
+            logger.error("Google Drive setup failed: %s", e)
 
     def get_new_credentials(self):
-
-        flow = InstalledAppFlow.from_client_secrets_file(f"{PATH}/credentials.json", SCOPES)
+        if not os.path.exists(CLIENT_SECRET_PATH):
+            raise FileNotFoundError(
+                f"Google OAuth client secret not found. Place it at {CLIENT_SECRET_PATH} "
+                "or set NLVE_GOOGLE_CLIENT_SECRET_PATH."
+            )
+        flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_PATH, SCOPES)
         creds = flow.run_local_server(port=0)
         return creds
 
@@ -101,7 +120,7 @@ class GoogleDriveManager:
 
     def find_file_by_name(self, file_name):
         if not self.folder_id:
-            print(f"Folder ID is not set for {file_name}.")
+            logger.warning("Folder ID is not set for %s", file_name)
             return None
         query = f"name='{file_name}' and '{self.folder_id}' in parents"
         results = self.service.files().list(q=query,
@@ -115,7 +134,7 @@ class GoogleDriveManager:
 
     def find_file_id_by_name(self, file_name):
         if not self.folder_id:
-            print(f"Folder ID is not set for {file_name}.")
+            logger.warning("Folder ID is not set for %s", file_name)
             return None
         query = f"name='{file_name}' and '{self.folder_id}' in parents"
         results = self.service.files().list(q=query,
@@ -132,15 +151,19 @@ class GoogleDriveManager:
             "name": drive_file_name,
             "parents": [self.folder_id]  # Specify the folder ID here
         }
-        media = MediaIoBaseUpload(open(local_file_path, "rb"), mimetype="text/csv")
+        media_file = open(local_file_path, "rb")
+        media = MediaIoBaseUpload(media_file, mimetype="text/csv")
 
-        existing_file = self.find_file_by_name(drive_file_name)
-        if existing_file:
-            self.file_id = existing_file.get("id")
-            file = self.service.files().update(fileId=self.file_id, media_body=media, body=file_metadata).execute()
-        else:
-            file = self.service.files().create(body=file_metadata, media_body=media, fields="id").execute()
-            self.file_id = file.get("id")
+        try:
+            existing_file = self.find_file_by_name(drive_file_name)
+            if existing_file:
+                self.file_id = existing_file.get("id")
+                file = self.service.files().update(fileId=self.file_id, media_body=media, body=file_metadata).execute()
+            else:
+                file = self.service.files().create(body=file_metadata, media_body=media, fields="id").execute()
+                self.file_id = file.get("id")
+        finally:
+            media_file.close()
 
         return self.file_id
 
