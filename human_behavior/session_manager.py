@@ -325,7 +325,7 @@ class QuotaTracker:
             
             for week_str, stats in data.get('weekly', {}).items():
                 self._weekly_stats[week_str] = WeeklyStats(**stats)
-        except Exception as e:
+        except (json.JSONDecodeError, OSError, AttributeError, TypeError) as e:
             logger.error(f"Failed to load stats: {e}")
     
     def _save_stats(self) -> None:
@@ -347,7 +347,7 @@ class QuotaTracker:
             self.storage_path.parent.mkdir(parents=True, exist_ok=True)
             with open(self.storage_path, 'w') as f:
                 json.dump(data, f, indent=2)
-        except Exception as e:
+        except (OSError, AttributeError, TypeError, ValueError) as e:
             logger.error(f"Failed to save stats: {e}")
 
 
@@ -625,7 +625,7 @@ class SessionManager:
         for callback in self._state_callbacks:
             try:
                 callback(new_state)
-            except Exception as e:
+            except (TypeError, RuntimeError, ValueError) as e:
                 logger.error(f"State callback error: {e}")
 
 

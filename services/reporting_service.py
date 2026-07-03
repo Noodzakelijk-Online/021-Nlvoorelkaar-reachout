@@ -22,7 +22,10 @@ from pathlib import Path
 from .sync_service import SyncService, SyncReport
 from .validation_service import ValidationService, ValidationReport
 from .scheduler_service import SchedulerService
-from ..utils.backup_manager import BackupManager
+try:
+    from utils.backup_manager import BackupManager
+except ImportError:
+    from ..utils.backup_manager import BackupManager
 
 class ReportType(Enum):
     DAILY_SYNC = "daily_sync"
@@ -178,9 +181,9 @@ class ReportingService:
             
             return report_data
             
-        except Exception as e:
-            self.logger.error(f"Error generating daily sync report: {str(e)}")
-            return {'error': str(e)}
+        except (AttributeError, TypeError, ValueError, KeyError, json.JSONDecodeError, RuntimeError, OSError) as e:
+            self.logger.error("Error generating daily sync report: %s", type(e).__name__)
+            return {'error': type(e).__name__}
     
     def generate_weekly_summary_report(self) -> Dict:
         """
@@ -236,9 +239,9 @@ class ReportingService:
             
             return report_data
             
-        except Exception as e:
-            self.logger.error(f"Error generating weekly summary report: {str(e)}")
-            return {'error': str(e)}
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, OSError, json.JSONDecodeError) as e:
+            self.logger.error("Error generating weekly summary report: %s", type(e).__name__)
+            return {'error': type(e).__name__}
     
     def generate_validation_report(self, validation_report: ValidationReport) -> Dict:
         """
@@ -279,9 +282,9 @@ class ReportingService:
             
             return report_data
             
-        except Exception as e:
-            self.logger.error(f"Error generating validation report: {str(e)}")
-            return {'error': str(e)}
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, OSError, json.JSONDecodeError) as e:
+            self.logger.error("Error generating validation report: %s", type(e).__name__)
+            return {'error': type(e).__name__}
     
     def generate_performance_report(self) -> Dict:
         """
@@ -318,9 +321,9 @@ class ReportingService:
             
             return report_data
             
-        except Exception as e:
-            self.logger.error(f"Error generating performance report: {str(e)}")
-            return {'error': str(e)}
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, OSError, json.JSONDecodeError) as e:
+            self.logger.error("Error generating performance report: %s", type(e).__name__)
+            return {'error': type(e).__name__}
     
     def _analyze_sync_history(self, sync_history: List[Dict]) -> Dict:
         """Analyze synchronization history"""
@@ -433,8 +436,8 @@ class ReportingService:
             
             charts.append(str(chart_file))
             
-        except Exception as e:
-            self.logger.error(f"Error generating sync charts: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, OSError) as e:
+            self.logger.error("Error generating sync charts: %s", type(e).__name__)
         
         return charts
     
@@ -473,8 +476,8 @@ class ReportingService:
                 
                 charts.append(str(chart_file))
                 
-        except Exception as e:
-            self.logger.error(f"Error generating weekly charts: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, OSError, json.JSONDecodeError) as e:
+            self.logger.error("Error generating weekly charts: %s", type(e).__name__)
         
         return charts
     
@@ -515,8 +518,8 @@ class ReportingService:
             
             charts.append(str(chart_file))
             
-        except Exception as e:
-            self.logger.error(f"Error generating validation charts: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, OSError, json.JSONDecodeError) as e:
+            self.logger.error("Error generating validation charts: %s", type(e).__name__)
         
         return charts
     
@@ -533,8 +536,8 @@ class ReportingService:
             self.logger.info(f"Report saved: {filepath}")
             return str(filepath)
             
-        except Exception as e:
-            self.logger.error(f"Error saving report: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, OSError, RuntimeError) as e:
+            self.logger.error("Error saving report: %s", type(e).__name__)
             return ""
     
     def _send_email_notification(self, report_data: Dict, report_type: ReportType):
@@ -593,8 +596,8 @@ class ReportingService:
             
             self.logger.info(f"Email notification sent for {report_type.value}")
             
-        except Exception as e:
-            self.logger.error(f"Error sending email notification: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, OSError, smtplib.SMTPException, RuntimeError) as e:
+            self.logger.error("Error sending email notification: %s", type(e).__name__)
     
     def _create_email_body(self, report_data: Dict, report_type: ReportType) -> str:
         """Create HTML email body"""
@@ -654,8 +657,8 @@ class ReportingService:
             
             return html
             
-        except Exception as e:
-            self.logger.error(f"Error creating email body: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError) as e:
+            self.logger.error("Error creating email body: %s", type(e).__name__)
             return f"<html><body><h2>{report_type.value.replace('_', ' ').title()} Report</h2><p>Error generating report content.</p></body></html>"
     
     def _get_sync_performance_metrics(self) -> Dict:
@@ -667,8 +670,8 @@ class ReportingService:
                 'data_throughput': '1500 volunteers/minute',
                 'error_rate': 1.5
             }
-        except Exception as e:
-            self.logger.error(f"Error getting sync performance metrics: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError) as e:
+            self.logger.error("Error getting sync performance metrics: %s", type(e).__name__)
             return {}
     
     def _get_database_statistics(self) -> Dict:
@@ -680,8 +683,8 @@ class ReportingService:
                 'index_efficiency': 95.8,
                 'query_performance': 'Excellent'
             }
-        except Exception as e:
-            self.logger.error(f"Error getting database statistics: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError) as e:
+            self.logger.error("Error getting database statistics: %s", type(e).__name__)
             return {}
     
     def _get_resource_usage(self) -> Dict:
@@ -693,8 +696,8 @@ class ReportingService:
                 'disk_usage': '1.2 GB',
                 'network_usage': 'Low'
             }
-        except Exception as e:
-            self.logger.error(f"Error getting resource usage: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError) as e:
+            self.logger.error("Error getting resource usage: %s", type(e).__name__)
             return {}
     
     def _analyze_performance_trends(self) -> Dict:
@@ -706,8 +709,8 @@ class ReportingService:
                 'error_rate_trend': 'Decreasing',
                 'database_growth_trend': 'Steady'
             }
-        except Exception as e:
-            self.logger.error(f"Error analyzing performance trends: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError) as e:
+            self.logger.error("Error analyzing performance trends: %s", type(e).__name__)
             return {}
     
     def _generate_sync_recommendations(self, sync_report: SyncReport) -> List[str]:
@@ -768,8 +771,8 @@ class ReportingService:
             
             self.logger.info("Email configuration updated")
             
-        except Exception as e:
-            self.logger.error(f"Error configuring email: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError) as e:
+            self.logger.error("Error configuring email: %s", type(e).__name__)
     
     def add_report_recipient(self, report_type: ReportType, email: str):
         """Add recipient for specific report type"""
@@ -777,10 +780,10 @@ class ReportingService:
             if report_type in self.report_configs:
                 if email not in self.report_configs[report_type].recipients:
                     self.report_configs[report_type].recipients.append(email)
-                    self.logger.info(f"Added recipient {email} for {report_type.value}")
+                    self.logger.info("Added report recipient for %s", report_type.value)
             
-        except Exception as e:
-            self.logger.error(f"Error adding report recipient: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError) as e:
+            self.logger.error("Error adding report recipient: %s", type(e).__name__)
     
     def get_report_history(self, days: int = 30) -> List[Dict]:
         """Get report generation history"""
@@ -800,6 +803,6 @@ class ReportingService:
             
             return sorted(recent_reports, key=lambda x: x['generated_at'], reverse=True)
             
-        except Exception as e:
-            self.logger.error(f"Error getting report history: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError) as e:
+            self.logger.error("Error getting report history: %s", type(e).__name__)
             return []

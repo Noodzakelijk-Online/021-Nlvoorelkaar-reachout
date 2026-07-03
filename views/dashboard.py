@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import ttk
 import sqlite3
 import json
+import logging
 import os
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Any, Callable
@@ -21,6 +22,8 @@ from views.enhanced_ui_components import (
     ThemeColors, ThemeFonts, apply_dark_theme,
     Toast, ToastType, show_toast
 )
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -139,8 +142,8 @@ class DashboardDataProvider:
                     stats.sync_status = row[0]
                     stats.last_sync = row[1]
                 
-        except Exception as e:
-            print(f"Error getting dashboard stats: {e}")
+        except sqlite3.Error as e:
+            logger.error("Error getting dashboard stats: %s", type(e).__name__)
         
         # Cache results
         self._cache = stats
@@ -153,12 +156,12 @@ class DashboardDataProvider:
         conn: sqlite3.Connection, 
         table: str, 
         where: str = "1=1"
-    ) -> int:
+        ) -> int:
         """Get count from table"""
         try:
             cursor = conn.execute(f'SELECT COUNT(*) FROM {table} WHERE {where}')
             return cursor.fetchone()[0] or 0
-        except:
+        except sqlite3.Error:
             return 0
 
 
@@ -552,8 +555,8 @@ class NotificationService:
         for callback in self._callbacks:
             try:
                 callback(notification)
-            except Exception as e:
-                print(f"Notification callback error: {e}")
+            except (TypeError, RuntimeError, AttributeError) as e:
+                logger.error("Notification callback error: %s", type(e).__name__)
         
         # Send email if requested
         if send_email and email_to and self._email_config:
@@ -587,8 +590,8 @@ class NotificationService:
             
             return True
             
-        except Exception as e:
-            print(f"Email send error: {e}")
+        except (smtplib.SMTPException, OSError, KeyError) as e:
+            logger.error("Email send error: %s", type(e).__name__)
             return False
     
     def get_notifications(

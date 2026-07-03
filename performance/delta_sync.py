@@ -362,7 +362,7 @@ class DeltaSyncEngine:
                     else:
                         result.unchanged += 1
             
-            except Exception as e:
+            except (AttributeError, TypeError, KeyError, ValueError, sqlite3.DatabaseError) as e:
                 logger.error(f"Error fetching page {page}: {e}")
                 continue
         
@@ -428,7 +428,7 @@ class DeltaSyncEngine:
                 if on_change and change_type != ChangeType.UNCHANGED:
                     on_change(change_type, volunteer)
         
-        except Exception as e:
+        except (AttributeError, TypeError, KeyError, ValueError, sqlite3.DatabaseError) as e:
             logger.error(f"Quick sync error: {e}")
         
         result.duration_seconds = time.monotonic() - start_time
@@ -512,7 +512,7 @@ class IncrementalUpdater:
         if data_type in self._update_callbacks:
             try:
                 self._update_callbacks[data_type](change_type, data)
-            except Exception as e:
+            except (TypeError, RuntimeError, AttributeError, ValueError) as e:
                 logger.error(f"Callback error for {data_type}: {e}")
     
     def apply_changes(
@@ -537,7 +537,7 @@ class IncrementalUpdater:
             try:
                 apply_func(ChangeType.ADDED, volunteer)
                 applied['added'] += 1
-            except Exception as e:
+            except (TypeError, RuntimeError, AttributeError, ValueError) as e:
                 logger.error(f"Error applying addition: {e}")
                 applied['errors'] += 1
         
@@ -546,7 +546,7 @@ class IncrementalUpdater:
             try:
                 apply_func(ChangeType.MODIFIED, volunteer)
                 applied['modified'] += 1
-            except Exception as e:
+            except (TypeError, RuntimeError, AttributeError, ValueError) as e:
                 logger.error(f"Error applying modification: {e}")
                 applied['errors'] += 1
         
@@ -555,7 +555,7 @@ class IncrementalUpdater:
             try:
                 apply_func(ChangeType.REMOVED, {'profile_id': profile_id})
                 applied['removed'] += 1
-            except Exception as e:
+            except (TypeError, RuntimeError, AttributeError, ValueError) as e:
                 logger.error(f"Error applying removal: {e}")
                 applied['errors'] += 1
         

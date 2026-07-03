@@ -2,10 +2,21 @@ import logging
 import random
 import time
 from typing import Optional, List
+import requests
 
-from google_drive.google_api_services import GoogleDriveManager
-from services.blacklistservice import BlacklistService
-from utils.csv_util.csv_util import contact_date_to_csv, pre_send_message_check
+try:
+    from google_drive.google_api_services import GoogleDriveManager
+except ModuleNotFoundError:
+    GoogleDriveManager = None
+try:
+    from services.blacklistservice import BlacklistService
+except ModuleNotFoundError:
+    BlacklistService = None
+try:
+    from utils.csv_util.csv_util import contact_date_to_csv, pre_send_message_check
+except ModuleNotFoundError:
+    contact_date_to_csv = None
+    pre_send_message_check = None
 
 from config.settings import headers, url_volunteer, minimum_time, maximum_time, url_base
 from controllers.logincontroller import LoginController
@@ -28,74 +39,21 @@ class MessagingService:
         self.notifier = None
         self.delay_to_start_sending = random.uniform(10.141516, 29.141516)
         self.loginController = loginController if loginController else LoginController()
-        self.google_drive_manager = GoogleDriveManager()
-        self.blService = BlacklistService()
+        self.google_drive_manager = GoogleDriveManager() if GoogleDriveManager else None
+        self.blService = BlacklistService() if BlacklistService else None
 
     def send_messages(self, notifier, username: str, password: str, message: str, phoneNumber: str,
                       recipients: List[str]) -> None:
-        self.notifier = notifier
-        self.username = username
-        self.password = password
-        self.message = message
-        self.phoneNumber = phoneNumber
-        self.recipients = recipients
-        current_recipient = 0
-        self.notifier.notify_starting_messaging(self.delay_to_start_sending)
-        time.sleep(self.delay_to_start_sending)
-        for recipient in self.recipients:
-            if pre_send_message_check(recipient, self.google_drive_manager):
-                if self.__send_message(recipient):
-                    time.sleep(1)
-                    if self.check_if_message_was_sent(recipient):
-                        contact_date_to_csv(recipient, self.google_drive_manager)
-                    else:
-                        print(f"Failed to send message to {recipient}")
-            else:
-                pass
-
-            current_recipient += 1
-            self.notifier.notify_progress_message_sending(current_recipient)
-            if current_recipient != len(self.recipients):
-                time.sleep(random.uniform(minimum_time, maximum_time))
+        raise RuntimeError(
+            "Legacy direct sending is disabled. Use OutreachLedger.send_approved_drafts "
+            "so every message has a reviewed draft, approval, send attempt, evidence, and audit trail."
+        )
 
     def __send_message(self, volunteer_id: str) -> bool:
-        url = f'{url_volunteer}{volunteer_id}?showMessage=1'
-        profile_id= get_profile_id(url)
-        if self.blService.check_if_was_blacklisted(profile_id):
-            print(f"Volunteer with id {profile_id} was blacklisted")
-            return False
-        try:
-            response = SessionManager.get_session().get(url, headers=headers)
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.text, 'html.parser')
-                message_token = soup.find('input', {'name': 'message[_token]'})['value']
-                message_loaded = soup.find('input', {'name': 'message[loaded]'})['value']
-                data = {
-                    'message[body]': self.message,
-                    'message[phoneNumber]': self.phoneNumber,
-                    'message[dusdat]': '',
-                    'message[_token]': message_token,
-                    'message[loaded]': message_loaded}
-            else:
-                logging.error(f'Error while sending message to volunteer with id {volunteer_id}: '
-                              f'Could not get message page')
-                return False
-            response = SessionManager.get_session().post(url, data=data, headers=headers)
-            if response.status_code != 200:
-                time.sleep(1)
-                logging.error(f'Error while sending message to volunteer with id {volunteer_id}: '
-                              f'Server responded with status code {response.status_code}')
-                print(f'Error while sending message to volunteer with id {volunteer_id}: '
-                      f'Server responded with status code {response.status_code}')
-                return False
-
-            print(
-                f'Message sent to volunteer with id {volunteer_id}' + f' Server responded with status code {response.status_code}')
-            return True
-
-        except Exception as e:
-            logging.error(f'Error while sending message to volunteer with id {volunteer_id}: {e.__str__()}')
-            return False
+        raise RuntimeError(
+            "Legacy direct sending is disabled. Use OutreachLedger.send_approved_drafts "
+            "so every message has a reviewed draft, approval, send attempt, evidence, and audit trail."
+        )
 
     def check_if_message_was_sent(self, volunteer_id: str):
         """
@@ -120,22 +78,18 @@ class MessagingService:
                         result = True
                         break
                 if not result:
-                    logging.error(f'Could not find message sent to volunteer with id {volunteer_id}')
+                    logging.error('Could not find expected sent message for volunteer')
                     self.notifier.notify_message_not_sent(volunteer_id)
                     return False
                 else:
-                    logging.info(f'Message was sent to volunteer with id {volunteer_id}')
-                    print(f'Message to {volunteer_id} was found in messages page')
+                    logging.info('Message was found in messages page')
                     return True
             else:
-                logging.error(f'Error while checking if message was sent to volunteer with id {volunteer_id}: '
-                              f'Could not get messages page')
-                print(f'Error while checking if message was sent to volunteer with id {volunteer_id}: '
-                              f'Could not get messages page')
+                logging.error('Error while checking sent message status: could not get messages page')
                 return False
 
-        except Exception as e:
-            logging.error(f'Error while checking if message was sent to volunteer with id {volunteer_id}: {str(e)}')
+        except (AttributeError, KeyError, TypeError, requests.exceptions.RequestException, IndexError) as e:
+            logging.error('Error while checking sent message status: %s', type(e).__name__)
             return False
 
 

@@ -270,7 +270,10 @@ class AsyncHTTPClient:
             )
             future.set_result(result)
             return result
-        except Exception as e:
+        except asyncio.CancelledError:
+            future.cancel()
+            raise
+        except (aiohttp.ClientError, OSError, RuntimeError, ValueError, TypeError) as e:
             error_result = TaskResult(
                 success=False,
                 error=str(e),
@@ -278,6 +281,21 @@ class AsyncHTTPClient:
             )
             future.set_result(error_result)
             return error_result
+        except (
+            AssertionError,
+            AttributeError,
+            IndexError,
+            KeyError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+            aiohttp.ClientError,
+            asyncio.TimeoutError,
+            SystemError
+        ):
+            future.cancel()
+            raise
         finally:
             async with self._lock:
                 self._pending_requests.pop(request_key, None)
@@ -339,7 +357,7 @@ class AsyncHTTPClient:
                     wait_time = (2 ** attempt) + (time.monotonic() % 1)
                     await asyncio.sleep(wait_time)
             
-            except Exception as e:
+            except (aiohttp.ClientError, ValueError, TypeError, OSError, RuntimeError, asyncio.TimeoutError) as e:
                 last_error = str(e)
                 logger.error(f"Unexpected error: {e}")
                 break
@@ -455,7 +473,9 @@ class AsyncTaskQueue:
                             result = await coro
                             if on_complete:
                                 on_complete(task_id, result)
-                        except Exception as e:
+                        except asyncio.CancelledError:
+                            raise
+                        except (TypeError, RuntimeError, ValueError, AttributeError) as e:
                             logger.error(f"Task {task_id} failed: {e}")
                         finally:
                             async with self._lock:

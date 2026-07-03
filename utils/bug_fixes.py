@@ -127,7 +127,7 @@ class InputValidator:
         try:
             result = urlparse(url)
             return all([result.scheme in ('http', 'https'), result.netloc])
-        except:
+        except (TypeError, AttributeError, ValueError):
             return False
     
     @staticmethod
@@ -215,7 +215,7 @@ class HTMLParsingFixes:
             if found:
                 text = found.get_text(strip=True)
                 return text if text else default
-        except Exception as e:
+        except (AttributeError, TypeError) as e:
             logger.debug(f"Error finding text with selector '{selector}': {e}")
         
         return default
@@ -236,7 +236,7 @@ class HTMLParsingFixes:
             found = element.select_one(selector)
             if found and found.has_attr(attr):
                 return found[attr]
-        except Exception as e:
+        except (AttributeError, TypeError) as e:
             logger.debug(f"Error finding attr '{attr}' with selector '{selector}': {e}")
         
         return default
@@ -545,7 +545,7 @@ class ErrorRecovery:
                     result['volunteers_found'] = row[2] or 0
                     result['resume_page'] = result['last_page'] + 1
         
-        except Exception as e:
+        except (sqlite3.DatabaseError, TypeError, ValueError) as e:
             logger.error(f"Error recovering partial scrape: {e}")
         
         return result
@@ -573,8 +573,6 @@ class ErrorRecovery:
                         import time
                         time.sleep(retry_delay * (attempt + 1))
                         continue
-                    raise
-                except Exception:
                     raise
             
             return None

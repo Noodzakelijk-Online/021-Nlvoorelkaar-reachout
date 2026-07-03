@@ -107,11 +107,11 @@ class LRUCache:
             ttl = ttl or self.default_ttl
             now = time.time()
             
-            # Calculate size
-            try:
-                size = len(pickle.dumps(value))
-            except:
-                size = 0
+        # Calculate size
+        try:
+            size = len(pickle.dumps(value))
+        except (pickle.PicklingError, TypeError):
+            size = 0
             
             entry = CacheEntry(
                 key=key,
@@ -256,7 +256,14 @@ class SQLiteCache:
         
         try:
             value = pickle.loads(value_bytes)
-        except:
+        except (
+            pickle.PickleError,
+            pickle.UnpicklingError,
+            ValueError,
+            TypeError,
+            UnicodeDecodeError,
+            EOFError
+        ):
             value = value_bytes.decode('utf-8')
         
         self.stats.hits += 1
@@ -271,7 +278,7 @@ class SQLiteCache:
         # Serialize value
         try:
             value_bytes = pickle.dumps(value)
-        except:
+        except (pickle.PicklingError, TypeError):
             value_bytes = str(value).encode('utf-8')
         
         # Compress if large
@@ -365,8 +372,10 @@ class MultiLevelCache:
                 time.sleep(300)  # Every 5 minutes
                 try:
                     self.cleanup()
-                except Exception as e:
-                    logger.error(f"Cache cleanup error: {e}")
+                except sqlite3.DatabaseError as e:
+                    logger.error(f"Cache cleanup DB error: {e}")
+                except (OSError, RuntimeError) as e:
+                    logger.error(f"Cache cleanup runtime error: {e}")
         
         thread = threading.Thread(target=cleanup_loop, daemon=True)
         thread.start()
@@ -414,7 +423,7 @@ class MultiLevelCache:
                     self.set(key, value, data_type)
                     self.stats.l3_hits += 1
                 return value
-            except Exception as e:
+            except (TypeError, OSError, RuntimeError, ValueError) as e:
                 logger.error(f"Fetch error for {key}: {e}")
                 return None
         

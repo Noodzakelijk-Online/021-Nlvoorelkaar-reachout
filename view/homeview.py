@@ -3,11 +3,13 @@ import random
 import threading
 import time
 import webbrowser
+from pathlib import Path
 from typing import Optional
 from routing.windowsmanagerinterface import WindowManagerInterface
 from services.servicemanagerinterface import ServiceManagerInterface
 from view.baseview import BaseView
 import customtkinter as ctk
+from tkinter import messagebox
 
 class HomeView(BaseView):
     def __init__(self, root_window: ctk.CTk, windows_manager: WindowManagerInterface,
@@ -403,8 +405,20 @@ class HomeView(BaseView):
     def send_message(self, data):
         self.clean_loading_frame()
         self.show_loading_screen(0, False)
-        self.service_manager.send_messages(self.root_window.username, self.root_window.password,
-                                           self.message.get("1.0", "end-1c"), self.phone.get(), data)
+        try:
+            self.service_manager.send_messages(
+                self.root_window.username,
+                self.root_window.password,
+                self.message.get("1.0", "end-1c"),
+                self.phone.get(),
+                data
+            )
+        except RuntimeError as exc:
+            self.clean_loading_frame()
+            self.percent_var.set(
+                "Direct sending is disabled. Use the message review and approval workflow."
+            )
+            messagebox.showwarning("Approval required", str(exc))
 
     def update_progress_bar_to_get_volunteers(self, current_page: int):
         total_volunteers = int(self.total_volunteers.get().replace('.', ''))
@@ -438,8 +452,10 @@ class HomeView(BaseView):
 
     def start_reminder_service(self, reminder_frequency: Optional[int] = None,
                                custom_reminder_message: Optional[str] = None):
-
-        self.service_manager.start_reminder_service(reminder_frequency, custom_reminder_message)
+        try:
+            self.service_manager.start_reminder_service(reminder_frequency, custom_reminder_message)
+        except RuntimeError as exc:
+            messagebox.showwarning("Reminder approval required", str(exc))
 
     def create_reminder_tab(self):
 
@@ -560,20 +576,55 @@ class HomeView(BaseView):
         self.fetch_logs(error_logs_frame, info_logs_frame)
 
     def fetch_logs(self, error_logs_frame, info_logs_frame):
-        # Read logs/error.log file and display the logs in the GUI
-        with open('logs/error.log', 'r') as file:
-            error_logs = file.readlines()
-            for i, log in enumerate(error_logs):
-                log_label = ctk.CTkLabel(error_logs_frame, text=log, width=80)
-                log_label.grid(row=i + 1, column=0, pady=10, padx=10)
-                self.widgets.append(log_label)
+        error_logs, info_logs = self._collect_log_lines()
+        self._render_log_lines(error_logs_frame, error_logs)
+        self._render_log_lines(info_logs_frame, info_logs)
 
-        with open('logs/info.log', 'r') as file:
-            info_logs = file.readlines()
-            for i, log in enumerate(info_logs):
-                log_label = ctk.CTkLabel(info_logs_frame, text=log, width=80)
-                log_label.grid(row=i + 1, column=0, pady=10, padx=10)
-                self.widgets.append(log_label)
+    @staticmethod
+    def _read_log_file(path: Path) -> list[str]:
+        if not path.exists():
+            return []
+        try:
+            return path.read_text(encoding='utf-8', errors='replace').splitlines()
+        except OSError:
+            return []
+
+    def _collect_log_lines(self) -> tuple[list[str], list[str]]:
+        log_dir = Path('logs')
+        error_lines = self._read_log_file(log_dir / 'error.log')
+        info_lines = self._read_log_file(log_dir / 'info.log')
+
+        if error_lines or info_lines:
+            return (
+                error_lines or ["No error log entries."],
+                info_lines or ["No info log entries."]
+            )
+
+        combined_lines = self._read_log_file(log_dir / 'nlvoorelkaar.log')
+        if combined_lines:
+            combined_errors = [
+                line for line in combined_lines
+                if ' - ERROR - ' in line or ' - CRITICAL - ' in line
+            ]
+            combined_info = [
+                line for line in combined_lines
+                if line not in combined_errors
+            ]
+            return (
+                combined_errors or ["No error log entries."],
+                combined_info or ["No info log entries."]
+            )
+
+        return (
+            ["No error log file found yet."],
+            ["No info log file found yet."]
+        )
+
+    def _render_log_lines(self, frame, lines: list[str]) -> None:
+        for i, log in enumerate(lines):
+            log_label = ctk.CTkLabel(frame, text=log, width=80)
+            log_label.grid(row=i + 1, column=0, pady=10, padx=10)
+            self.widgets.append(log_label)
 
     def clear_and_fetch_logs(self, error_logs_frame, info_logs_frame):
         #     clear only labels within the frames

@@ -4,12 +4,14 @@ Ensures data quality and consistency in the volunteer database
 """
 
 import re
+import sqlite3
 import logging
 from typing import Dict, List, Optional, Tuple, Set
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 from enum import Enum
 import phonenumbers
+from phonenumbers.phonenumberutil import NumberParseException
 from email_validator import validate_email, EmailNotValidError
 
 class ValidationLevel(Enum):
@@ -158,8 +160,8 @@ class ValidationService:
             
             return report
             
-        except Exception as e:
-            self.logger.error(f"Validation failed: {str(e)}")
+        except (AttributeError, TypeError, ValueError, sqlite3.Error) as e:
+            self.logger.error("Validation failed: %s", type(e).__name__)
             raise
     
     def _validate_volunteer(self, volunteer: Dict) -> List[ValidationIssue]:
@@ -186,8 +188,8 @@ class ValidationService:
             # Validate data freshness
             issues.extend(self._validate_data_freshness(volunteer, volunteer_id, volunteer_name))
             
-        except Exception as e:
-            self.logger.error(f"Error validating volunteer {volunteer_name}: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError) as e:
+            self.logger.error("Error validating volunteer record: %s", type(e).__name__)
             issues.append(ValidationIssue(
                 volunteer_id=volunteer_id,
                 volunteer_name=volunteer_name,
@@ -195,7 +197,7 @@ class ValidationService:
                 level=ValidationLevel.ERROR,
                 field='validation',
                 issue_type='validation_error',
-                description=f'Error during validation: {str(e)}',
+                description=f'Error during validation: {type(e).__name__}',
                 current_value='',
                 suggested_fix='Manual review required',
                 detected_at=datetime.now()
@@ -350,7 +352,7 @@ class ValidationService:
                         suggested_fix='Update volunteer information',
                         detected_at=datetime.now()
                     ))
-            except Exception as e:
+            except (ValueError, TypeError, AttributeError, OverflowError):
                 issues.append(ValidationIssue(
                     volunteer_id=volunteer_id,
                     volunteer_name=volunteer_name,
@@ -440,7 +442,7 @@ class ValidationService:
             # Parse phone number with Netherlands as default region
             parsed_number = phonenumbers.parse(phone, "NL")
             return phonenumbers.is_valid_number(parsed_number)
-        except:
+        except (NumberParseException, TypeError, AttributeError):
             # Fallback to basic regex validation
             phone_pattern = r'^(\+31|0031|0)[6-9]\d{8}$'
             return bool(re.match(phone_pattern, re.sub(r'[\s\-\(\)]', '', phone)))
@@ -613,8 +615,8 @@ class ValidationService:
             
             self.logger.info("Validation report stored successfully")
             
-        except Exception as e:
-            self.logger.error(f"Error storing validation report: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError) as e:
+            self.logger.error("Error storing validation report: %s", type(e).__name__)
     
     def get_validation_summary(self) -> Dict:
         """Get summary of latest validation results"""
@@ -636,9 +638,9 @@ class ValidationService:
                 'top_recommendations': latest_report.recommendations[:3]
             }
             
-        except Exception as e:
-            self.logger.error(f"Error getting validation summary: {str(e)}")
-            return {'status': 'error', 'message': str(e)}
+        except (AttributeError, TypeError, ValueError, KeyError) as e:
+            self.logger.error("Error getting validation summary: %s", type(e).__name__)
+            return {'status': 'error', 'message': type(e).__name__}
     
     def get_validation_history(self, days: int = 30) -> List[Dict]:
         """Get validation history for specified days"""
@@ -658,8 +660,8 @@ class ValidationService:
             
             return sorted(history, key=lambda x: x['report_date'], reverse=True)
             
-        except Exception as e:
-            self.logger.error(f"Error getting validation history: {str(e)}")
+        except (AttributeError, TypeError, ValueError) as e:
+            self.logger.error("Error getting validation history: %s", type(e).__name__)
             return []
     
     def fix_validation_issues(self, issue_ids: List[str]) -> Dict:
@@ -676,9 +678,9 @@ class ValidationService:
                     self.logger.info(f"Attempting to fix issue {issue_id}")
                     fixed_count += 1
                     results.append({'issue_id': issue_id, 'status': 'fixed'})
-                except Exception as e:
+                except (TypeError, ValueError, AttributeError, KeyError) as e:
                     failed_count += 1
-                    results.append({'issue_id': issue_id, 'status': 'failed', 'error': str(e)})
+                    results.append({'issue_id': issue_id, 'status': 'failed', 'error': type(e).__name__})
             
             return {
                 'fixed_count': fixed_count,
@@ -686,6 +688,6 @@ class ValidationService:
                 'results': results
             }
             
-        except Exception as e:
-            self.logger.error(f"Error fixing validation issues: {str(e)}")
-            return {'error': str(e)}
+        except (AttributeError, TypeError, ValueError) as e:
+            self.logger.error("Error fixing validation issues: %s", type(e).__name__)
+            return {'error': type(e).__name__}

@@ -9,7 +9,7 @@ import json
 import sqlite3
 from contextlib import closing
 from datetime import datetime, timedelta
-from typing import Optional, Dict, List, Any, Callable
+from typing import Optional, Dict, List, Any, Callable, Tuple
 from dataclasses import dataclass, asdict
 from enum import Enum
 import logging
@@ -33,6 +33,7 @@ class ExportConfig:
     """Export configuration"""
     format: ExportFormat = ExportFormat.CSV
     include_headers: bool = True
+    exclude_redacted: bool = True
     date_format: str = "%Y-%m-%d %H:%M:%S"
     encoding: str = "utf-8"
     delimiter: str = ","
@@ -57,7 +58,8 @@ class DataExporter:
         output_path: str,
         config: Optional[ExportConfig] = None,
         filters: Optional[Dict[str, Any]] = None,
-        columns: Optional[List[str]] = None
+        columns: Optional[List[str]] = None,
+        actor: str = "user"
     ) -> int:
         """
         Export volunteers to file
@@ -72,43 +74,129 @@ class DataExporter:
             Number of records exported
         """
         config = config or ExportConfig()
-        columns = columns or [
-            'profile_id', 'name', 'location', 'description',
-            'skills', 'availability', 'contact_info', 'profile_url',
-            'first_seen', 'last_seen', 'is_active'
-        ]
-        
-        # Build query
-        query = f"SELECT {', '.join(columns)} FROM volunteers WHERE 1=1"
-        params = []
-        
-        if filters:
-            if filters.get('location'):
-                query += " AND location LIKE ?"
-                params.append(f"%{filters['location']}%")
-            if filters.get('active_only', True):
-                query += " AND is_active = 1"
-            if filters.get('since'):
-                query += " AND first_seen >= ?"
-                params.append(filters['since'])
-        
-        query += " ORDER BY last_seen DESC"
-        
-        # Fetch data
         with closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
+            available_columns = self._get_table_columns(conn, 'volunteers')
+            columns = columns or self._default_volunteer_columns(available_columns)
+            columns = [column for column in columns if column in available_columns]
+            if not columns:
+                raise ValueError("No valid volunteer columns selected for export")
+
+            query, params = self._build_volunteer_export_query(
+                columns,
+                available_columns,
+                config,
+                filters
+            )
             cursor = conn.execute(query, params)
             rows = [dict(row) for row in cursor]
         
         # Export based on format
         if config.format == ExportFormat.CSV:
-            return self._export_csv(output_path, rows, columns, config)
+            exported_count = self._export_csv(output_path, rows, columns, config)
         elif config.format == ExportFormat.JSON:
-            return self._export_json(output_path, rows, config)
+            exported_count = self._export_json(output_path, rows, config)
         elif config.format == ExportFormat.EXCEL:
-            return self._export_excel(output_path, rows, columns, config)
+            exported_count = self._export_excel(output_path, rows, columns, config)
+        else:
+            return 0
         
-        return 0
+        self._record_export_audit('volunteers', exported_count, output_path, columns, actor=actor)
+        return exported_count
+
+    def _get_table_columns(self, conn: sqlite3.Connection, table: str) -> List[str]:
+        """Return column names for a table if it exists."""
+        return [row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+
+    def _default_volunteer_columns(self, available_columns: List[str]) -> List[str]:
+        """Choose export columns for either the current or legacy volunteer schema."""
+        if 'volunteer_id' in available_columns:
+            preferred = [
+                'volunteer_id', 'name', 'location', 'description', 'skills',
+                'categories', 'availability', 'contact_info', 'profile_url',
+                'scraped_at', 'updated_at', 'retention_status'
+            ]
+        else:
+            preferred = [
+                'profile_id', 'name', 'location', 'description',
+                'skills', 'availability', 'contact_info', 'profile_url',
+                'first_seen', 'last_seen', 'is_active'
+            ]
+        return [column for column in preferred if column in available_columns]
+
+    def _build_volunteer_export_query(
+        self,
+        columns: List[str],
+        available_columns: List[str],
+        config: ExportConfig,
+        filters: Optional[Dict[str, Any]]
+    ) -> Tuple[str, List[Any]]:
+        """Build a schema-aware volunteer export query."""
+        query = f"SELECT {', '.join(columns)} FROM volunteers WHERE 1=1"
+        params: List[Any] = []
+
+        if config.exclude_redacted and 'retention_status' in available_columns:
+            query += " AND COALESCE(retention_status, 'active') != 'redacted'"
+
+        if filters:
+            if filters.get('location') and 'location' in available_columns:
+                query += " AND location LIKE ?"
+                params.append(f"%{filters['location']}%")
+            if filters.get('active_only', True) and 'is_active' in available_columns:
+                query += " AND is_active = 1"
+            if filters.get('since'):
+                if 'first_seen' in available_columns:
+                    query += " AND first_seen >= ?"
+                    params.append(filters['since'])
+                elif 'scraped_at' in available_columns:
+                    query += " AND scraped_at >= ?"
+                    params.append(filters['since'])
+
+        if 'updated_at' in available_columns:
+            query += " ORDER BY updated_at DESC"
+        elif 'last_seen' in available_columns:
+            query += " ORDER BY last_seen DESC"
+
+        return query, params
+
+    def _record_export_audit(
+        self,
+        entity_type: str,
+        record_count: int,
+        output_path: str,
+        columns: List[str],
+        actor: str = "user"
+    ) -> None:
+        """Record export activity when the current operating ledger schema exists."""
+        try:
+            with closing(sqlite3.connect(self.db_path)) as conn:
+                audit_exists = conn.execute('''
+                    SELECT 1 FROM sqlite_master
+                    WHERE type = 'table' AND name = 'audit_events'
+                ''').fetchone()
+                if not audit_exists:
+                    return
+
+                conn.execute('''
+                    INSERT INTO audit_events
+                    (entity_type, entity_id, action, actor, before_state, after_state, risk_level)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    entity_type,
+                    os.path.basename(output_path),
+                    f"{entity_type}_data_exported",
+                    actor,
+                    "{}",
+                    json.dumps({
+                        "record_count": record_count,
+                        "output_file": os.path.basename(output_path),
+                        "columns": columns
+                    }, ensure_ascii=False, sort_keys=True),
+                    "high"
+                ))
+                conn.commit()
+        except (sqlite3.DatabaseError, AttributeError, TypeError, ValueError) as exc:
+            logger.warning(f"Could not record export audit event: {exc}")
     
     def export_messages(
         self,
@@ -245,7 +333,7 @@ class DataExporter:
                     try:
                         if len(str(cell.value)) > max_length:
                             max_length = len(str(cell.value))
-                    except:
+                    except (TypeError, ValueError):
                         pass
                 adjusted_width = min(max_length + 2, 50)
                 ws.column_dimensions[column].width = adjusted_width
@@ -312,8 +400,8 @@ class DataImporter:
                 try:
                     result = self._import_volunteer_row(conn, row)
                     stats[result] += 1
-                except Exception as e:
-                    logger.error(f"Error importing row {idx}: {e}")
+                except (sqlite3.DatabaseError, KeyError, TypeError, ValueError) as e:
+                    logger.error("Error importing row %s: %s", idx, type(e).__name__)
                     stats['errors'] += 1
                 
                 if on_progress:
@@ -423,9 +511,9 @@ class DataImporter:
                         stats['imported'] += 1
                     except sqlite3.IntegrityError:
                         stats['updated'] += 1
-                        
-                except Exception as e:
-                    logger.error(f"Error importing blacklist row: {e}")
+
+                except (sqlite3.DatabaseError, KeyError, TypeError, ValueError) as e:
+                    logger.error("Error importing blacklist row: %s", type(e).__name__)
                     stats['errors'] += 1
             
             conn.commit()
@@ -831,7 +919,7 @@ class DataCleanup:
                 try:
                     cursor = conn.execute(f'SELECT COUNT(*) FROM {table}')
                     stats[f'{table}_count'] = cursor.fetchone()[0]
-                except:
+                except sqlite3.OperationalError:
                     stats[f'{table}_count'] = 0
         
         return stats

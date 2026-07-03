@@ -254,6 +254,59 @@ class DashboardView(ctk.CTkFrame):
             "Currently running"
         )
         self.active_campaigns_card.grid(row=1, column=1, padx=10, pady=10, sticky="ew")
+
+        self.awaiting_approval_card = MetricsCard(
+            metrics_frame,
+            "Awaiting Approval",
+            "0",
+            "Drafts to review",
+            ModernTheme.WARNING_COLOR
+        )
+        self.awaiting_approval_card.grid(row=2, column=0, padx=10, pady=10, sticky="ew")
+
+        self.sent_messages_card = MetricsCard(
+            metrics_frame,
+            "Approved/Sent",
+            "0 / 0",
+            "Ready and sent"
+        )
+        self.sent_messages_card.grid(row=2, column=1, padx=10, pady=10, sticky="ew")
+
+        self.followups_due_card = MetricsCard(
+            metrics_frame,
+            "Follow-ups Due",
+            "0",
+            "Need review",
+            ModernTheme.WARNING_COLOR
+        )
+        self.followups_due_card.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
+
+        self.failed_sends_card = MetricsCard(
+            metrics_frame,
+            "Failed Sends",
+            "0",
+            "Needs attention",
+            ModernTheme.ERROR_COLOR
+        )
+        self.failed_sends_card.grid(row=3, column=1, padx=10, pady=10, sticky="ew")
+
+        self.strong_matches_card = MetricsCard(
+            metrics_frame,
+            "Strong Matches",
+            "0",
+            "Assessed fit",
+            ModernTheme.SUCCESS_COLOR
+        )
+        self.strong_matches_card.grid(row=4, column=0, padx=10, pady=10, sticky="ew")
+
+        self.retention_actions_card = MetricsCard(
+            metrics_frame,
+            "Retention Review",
+            "0",
+            "Proposed actions",
+            ModernTheme.WARNING_COLOR
+        )
+        self.retention_actions_card.grid(row=4, column=1, padx=10, pady=10, sticky="ew")
         
         # Recent activity section
         activity_frame = ctk.CTkFrame(self)
@@ -282,7 +335,7 @@ class DashboardView(ctk.CTkFrame):
                 data = self.data_callback()
                 self.update_metrics(data)
                 self.update_activity(data.get('recent_activity', []))
-            except Exception as e:
+            except (AttributeError, KeyError, TypeError, RuntimeError) as e:
                 logger.error(f"Error refreshing dashboard data: {e}")
                 
     def update_metrics(self, data: Dict[str, Any]):
@@ -307,6 +360,36 @@ class DashboardView(ctk.CTkFrame):
             str(data.get('total_campaigns', 0)),
             "Currently running"
         )
+
+        self.awaiting_approval_card.update_value(
+            str(data.get('message_drafts_draft', 0)),
+            "Drafts to review"
+        )
+
+        self.sent_messages_card.update_value(
+            f"{data.get('message_drafts_approved', 0)} / {data.get('message_drafts_sent', 0)}",
+            "Approved / sent"
+        )
+
+        self.followups_due_card.update_value(
+            str(data.get('follow_ups_due', 0)),
+            "Need review"
+        )
+
+        self.failed_sends_card.update_value(
+            str(data.get('failed_sends', 0)),
+            "Needs attention"
+        )
+
+        self.strong_matches_card.update_value(
+            str(data.get('strong_matches', 0)),
+            "Assessed fit"
+        )
+
+        self.retention_actions_card.update_value(
+            str(data.get('retention_actions_proposed', 0)),
+            "Proposed actions"
+        )
         
     def update_activity(self, activities: List[str]):
         """Update recent activity"""
@@ -321,14 +404,26 @@ class DashboardView(ctk.CTkFrame):
 class CampaignView(ctk.CTkFrame):
     """Modern campaign management view"""
     
-    def __init__(self, parent, campaign_callback: Callable = None):
+    def __init__(
+        self,
+        parent,
+        campaign_callback: Callable = None,
+        data_callback: Callable = None,
+        readiness_callback: Callable = None,
+        operating_summary_callback: Callable = None
+    ):
         super().__init__(parent)
         self.campaign_callback = campaign_callback
+        self.data_callback = data_callback
+        self.readiness_callback = readiness_callback
+        self.operating_summary_callback = operating_summary_callback
+        self.selected_campaign_id = None
         
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(1, weight=1)
         
         self.setup_ui()
+        self.refresh_campaigns()
         
     def setup_ui(self):
         """Setup campaign management UI"""
@@ -344,13 +439,21 @@ class CampaignView(ctk.CTkFrame):
         )
         title_label.grid(row=0, column=0, padx=15, pady=15, sticky="w")
         
+        refresh_button = ctk.CTkButton(
+            header_frame,
+            text="Refresh",
+            command=self.refresh_campaigns,
+            width=100
+        )
+        refresh_button.grid(row=0, column=1, padx=(15, 5), pady=15, sticky="e")
+
         new_campaign_button = ctk.CTkButton(
             header_frame,
             text="+ New Campaign",
             command=self.create_new_campaign,
             width=150
         )
-        new_campaign_button.grid(row=0, column=1, padx=15, pady=15, sticky="e")
+        new_campaign_button.grid(row=0, column=2, padx=(5, 15), pady=15, sticky="e")
         
         # Campaign list
         list_frame = ctk.CTkFrame(self)
@@ -373,6 +476,7 @@ class CampaignView(ctk.CTkFrame):
         details_frame = ctk.CTkFrame(self)
         details_frame.grid(row=1, column=1, padx=(10, 20), pady=10, sticky="nsew")
         details_frame.grid_columnconfigure(0, weight=1)
+        details_frame.grid_rowconfigure(1, weight=1)
         
         details_title = ctk.CTkLabel(
             details_frame,
@@ -385,7 +489,31 @@ class CampaignView(ctk.CTkFrame):
             details_frame,
             font=ModernTheme.FONT_SMALL
         )
-        self.details_text.grid(row=1, column=0, padx=15, pady=(0, 15), sticky="nsew")
+        self.details_text.grid(row=1, column=0, padx=15, pady=(0, 10), sticky="nsew")
+
+        self.details_text.insert("1.0", "Select a campaign to inspect readiness.")
+        self.details_text.configure(state="disabled")
+
+        action_frame = ctk.CTkFrame(details_frame)
+        action_frame.grid(row=2, column=0, padx=15, pady=(0, 15), sticky="ew")
+
+        self.create_drafts_button = ctk.CTkButton(
+            action_frame,
+            text="Create Drafts",
+            command=self.create_drafts_for_selected,
+            width=130,
+            state="disabled"
+        )
+        self.create_drafts_button.pack(side="right", padx=8, pady=8)
+
+        self.assess_matches_button = ctk.CTkButton(
+            action_frame,
+            text="Assess Matches",
+            command=self.assess_matches_for_selected,
+            width=130,
+            state="disabled"
+        )
+        self.assess_matches_button.pack(side="right", padx=8, pady=8)
         
     def create_new_campaign(self):
         """Open new campaign dialog"""
@@ -401,15 +529,30 @@ class CampaignView(ctk.CTkFrame):
         for widget in self.campaign_list.winfo_children():
             widget.destroy()
             
-        # Add campaigns (placeholder)
-        campaigns = [
-            {"name": "Summer Volunteers", "status": "Active", "contacts": 45},
-            {"name": "Event Helpers", "status": "Paused", "contacts": 23},
-            {"name": "Regular Support", "status": "Active", "contacts": 67}
-        ]
-        
+        campaigns = []
+        if self.data_callback:
+            try:
+                campaigns = self.data_callback() or []
+            except (AttributeError, TypeError, RuntimeError, ValueError) as exc:
+                logger.error(f"Error loading campaigns: {exc}")
+
+        if not campaigns:
+            empty_label = ctk.CTkLabel(
+                self.campaign_list,
+                text="No campaigns yet.",
+                font=ModernTheme.FONT_MEDIUM,
+                text_color=ModernTheme.TEXT_SECONDARY
+            )
+            empty_label.grid(row=0, column=0, padx=15, pady=20, sticky="w")
+            self.show_campaign_details(None)
+            return
+
         for campaign in campaigns:
             self.add_campaign_item(campaign)
+
+        if self.selected_campaign_id:
+            selected = next((c for c in campaigns if c.get("id") == self.selected_campaign_id), None)
+            self.show_campaign_details(selected)
             
     def add_campaign_item(self, campaign: Dict[str, Any]):
         """Add campaign item to list"""
@@ -420,29 +563,243 @@ class CampaignView(ctk.CTkFrame):
         # Campaign name
         name_label = ctk.CTkLabel(
             item_frame,
-            text=campaign["name"],
+            text=campaign.get("name", "Untitled campaign"),
             font=ModernTheme.FONT_MEDIUM
         )
         name_label.grid(row=0, column=0, padx=10, pady=10, sticky="w")
         
         # Status
-        status_color = ModernTheme.SUCCESS_COLOR if campaign["status"] == "Active" else ModernTheme.WARNING_COLOR
+        status = campaign.get("status", "active")
+        status_color = ModernTheme.SUCCESS_COLOR if str(status).lower() == "active" else ModernTheme.WARNING_COLOR
         status_label = ctk.CTkLabel(
             item_frame,
-            text=campaign["status"],
+            text=str(status).title(),
             font=ModernTheme.FONT_SMALL,
             text_color=status_color
         )
         status_label.grid(row=0, column=1, padx=10, pady=10, sticky="e")
         
-        # Contacts count
-        contacts_label = ctk.CTkLabel(
+        target_text = campaign.get("target_categories") or "Any category"
+        location_text = campaign.get("target_location") or "Any location"
+        target_label = ctk.CTkLabel(
             item_frame,
-            text=f"{campaign['contacts']} contacts",
+            text=f"{target_text} | {location_text}",
             font=ModernTheme.FONT_SMALL,
             text_color=ModernTheme.TEXT_SECONDARY
         )
-        contacts_label.grid(row=1, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="w")
+        target_label.grid(row=1, column=0, columnspan=2, padx=10, pady=(0, 6), sticky="w")
+
+        select_button = ctk.CTkButton(
+            item_frame,
+            text="Select",
+            command=lambda selected=campaign: self.show_campaign_details(selected),
+            width=90
+        )
+        select_button.grid(row=2, column=1, padx=10, pady=(0, 10), sticky="e")
+
+    def show_campaign_details(self, campaign: Optional[Dict[str, Any]]):
+        """Show details and readiness for the selected campaign."""
+        self.details_text.configure(state="normal")
+        self.details_text.delete("1.0", "end")
+
+        if not campaign:
+            self.selected_campaign_id = None
+            self.create_drafts_button.configure(state="disabled")
+            self.assess_matches_button.configure(state="disabled")
+            self.details_text.insert("1.0", "Select a campaign to inspect readiness.")
+            self.details_text.configure(state="disabled")
+            return
+
+        self.selected_campaign_id = campaign.get("id")
+        readiness = {}
+        if self.readiness_callback and self.selected_campaign_id:
+            try:
+                readiness = self.readiness_callback(self.selected_campaign_id) or {}
+            except (AttributeError, TypeError, RuntimeError, ValueError) as exc:
+                logger.error(f"Error loading campaign readiness: {exc}")
+                readiness = {"ready": False, "issues": [{"severity": "error", "message": str(exc)}]}
+
+        operating_summary = {}
+        if self.operating_summary_callback and self.selected_campaign_id:
+            try:
+                operating_summary = self.operating_summary_callback(self.selected_campaign_id) or {}
+            except (AttributeError, TypeError, RuntimeError, ValueError) as exc:
+                logger.error(f"Error loading campaign operating summary: {exc}")
+
+        lines = [
+            f"Name: {campaign.get('name', 'Untitled campaign')}",
+            f"Status: {campaign.get('status', 'active')}",
+            f"Target categories: {campaign.get('target_categories') or 'Any'}",
+            f"Target location: {campaign.get('target_location') or 'Any'}",
+            "",
+            "Message template:",
+            campaign.get("message_template") or "Missing message template.",
+            "",
+            "Readiness:",
+            f"- State: {readiness.get('status', 'unknown')}",
+            f"- Eligible volunteers: {readiness.get('eligible_volunteers', 0)}"
+        ]
+
+        draft_counts = readiness.get("draft_counts") or {}
+        if draft_counts:
+            lines.extend([
+                f"- Drafts awaiting approval: {draft_counts.get('draft', 0)}",
+                f"- Approved drafts: {draft_counts.get('approved', 0)}",
+                f"- Sent drafts: {draft_counts.get('sent', 0)}",
+                f"- Failed drafts: {draft_counts.get('failed', 0)}"
+            ])
+
+        match_counts = readiness.get("match_counts") or {}
+        if match_counts:
+            lines.extend([
+                f"- Strong matches: {match_counts.get('strong', 0)}",
+                f"- Possible matches: {match_counts.get('possible', 0)}",
+                f"- Weak matches: {match_counts.get('weak', 0)}"
+            ])
+
+        issues = readiness.get("issues") or []
+        if issues:
+            lines.append("")
+            lines.append("Issues:")
+            lines.extend(f"- {issue.get('severity', 'info')}: {issue.get('message', '')}" for issue in issues)
+
+        next_actions = readiness.get("next_actions") or []
+        summary_actions = operating_summary.get("next_actions") or []
+        for action in summary_actions:
+            if action not in next_actions:
+                next_actions.append(action)
+        if next_actions:
+            lines.append("")
+            lines.append("Next actions:")
+            lines.extend(f"- {action}" for action in next_actions)
+
+        if operating_summary:
+            lines.extend(self.format_operating_summary(operating_summary))
+
+        self.details_text.insert("1.0", "\n".join(lines))
+        self.details_text.configure(state="disabled")
+
+        button_state = "normal" if readiness.get("ready") else "disabled"
+        self.create_drafts_button.configure(state=button_state)
+        self.assess_matches_button.configure(state=button_state)
+
+    def format_operating_summary(self, summary: Dict[str, Any]) -> List[str]:
+        """Format campaign ledger state for compact operator review."""
+        counts = summary.get("counts") or {}
+        draft_counts = counts.get("message_drafts") or {}
+        send_counts = counts.get("send_attempts") or {}
+        response_counts = counts.get("responses") or {}
+        follow_up_counts = counts.get("follow_ups") or {}
+        match_counts = counts.get("matches") or {}
+        outcome_counts = counts.get("outcomes") or {}
+        exclusion_counts = counts.get("exclusions") or {}
+
+        lines = [
+            "",
+            "Operating ledger:",
+            f"- Eligible volunteers: {counts.get('eligible_volunteers', 0)}",
+            f"- Contacts recorded: {counts.get('contacts', 0)}",
+            f"- Drafts: {self.format_counts(draft_counts)}",
+            f"- Send attempts: {self.format_counts(send_counts)}",
+            f"- Responses: {self.format_counts(response_counts)}",
+            f"- Follow-ups: {self.format_counts(follow_up_counts)}",
+            f"- Matches: {self.format_counts(match_counts)}",
+            f"- Exclusions: {counts.get('excluded_volunteers', 0)} volunteers; {self.format_counts(exclusion_counts)}",
+            f"- Outcomes: {self.format_counts(outcome_counts)}"
+        ]
+
+        recent_sections = [
+            ("Recent matches", summary.get("matches") or [], self.format_match_line),
+            ("Recent exclusions", summary.get("exclusions") or [], self.format_exclusion_line),
+            ("Recent drafts", summary.get("message_drafts") or [], self.format_draft_line),
+            ("Recent send attempts", summary.get("send_attempts") or [], self.format_send_line),
+            ("Recent responses", summary.get("responses") or [], self.format_response_line),
+            ("Upcoming follow-ups", summary.get("follow_ups") or [], self.format_follow_up_line),
+            ("Recorded outcomes", summary.get("outcomes") or [], self.format_outcome_line),
+            ("Recent audit", summary.get("audit_events") or [], self.format_audit_line)
+        ]
+
+        for title, items, formatter in recent_sections:
+            if not items:
+                continue
+            lines.extend(["", f"{title}:"])
+            lines.extend(f"- {formatter(item)}" for item in items[:5])
+
+        return lines
+
+    def format_counts(self, counts: Dict[str, int]) -> str:
+        """Format status buckets for display."""
+        if not counts:
+            return "none"
+        return ", ".join(f"{key} {value}" for key, value in sorted(counts.items()))
+
+    def format_match_line(self, item: Dict[str, Any]) -> str:
+        return (
+            f"{item.get('volunteer_name') or item.get('volunteer_id')} "
+            f"{item.get('status', 'unknown')} ({item.get('score', 0):.0f})"
+        )
+
+    def format_exclusion_line(self, item: Dict[str, Any]) -> str:
+        return (
+            f"{item.get('volunteer_name') or item.get('volunteer_id')} | "
+            f"{item.get('reason_code', 'excluded')} | "
+            f"{item.get('reason_message') or 'No reason saved.'}"
+        )
+
+    def format_draft_line(self, item: Dict[str, Any]) -> str:
+        return (
+            f"{item.get('volunteer_name') or item.get('volunteer_id')} | "
+            f"{item.get('status', 'draft')} | {item.get('updated_at') or 'unknown date'}"
+        )
+
+    def format_send_line(self, item: Dict[str, Any]) -> str:
+        detail = item.get("error_message") or item.get("delivery_evidence") or "no evidence saved"
+        return (
+            f"{item.get('volunteer_name') or item.get('volunteer_id')} | "
+            f"{item.get('status', 'unknown')} | {detail}"
+        )
+
+    def format_response_line(self, item: Dict[str, Any]) -> str:
+        return (
+            f"{item.get('volunteer_name') or item.get('volunteer_id')} | "
+            f"{item.get('classification', 'unknown')} | {item.get('received_at') or 'unknown date'}"
+        )
+
+    def format_follow_up_line(self, item: Dict[str, Any]) -> str:
+        return (
+            f"{item.get('volunteer_name') or item.get('volunteer_id')} | "
+            f"{item.get('status', 'due')} | due {item.get('due_at') or 'unknown'}"
+        )
+
+    def format_outcome_line(self, item: Dict[str, Any]) -> str:
+        return (
+            f"{item.get('volunteer_name') or item.get('volunteer_id')} | "
+            f"{item.get('outcome_type', 'unknown')} | "
+            f"{item.get('notes') or 'no notes'}"
+        )
+
+    def format_audit_line(self, item: Dict[str, Any]) -> str:
+        return (
+            f"{item.get('action', 'event')} | "
+            f"{item.get('entity_type', 'entity')} #{item.get('entity_id', '')} | "
+            f"{item.get('created_at') or 'unknown date'}"
+        )
+
+    def create_drafts_for_selected(self):
+        """Create reviewable message drafts for the selected campaign."""
+        if not self.selected_campaign_id:
+            return
+        if self.campaign_callback:
+            self.campaign_callback("create_drafts", {"campaign_id": self.selected_campaign_id})
+        self.refresh_campaigns()
+
+    def assess_matches_for_selected(self):
+        """Assess eligible volunteer matches for the selected campaign."""
+        if not self.selected_campaign_id:
+            return
+        if self.campaign_callback:
+            self.campaign_callback("assess_matches", {"campaign_id": self.selected_campaign_id})
+        self.refresh_campaigns()
 
 class CampaignDialog(ctk.CTkToplevel):
     """Modern campaign creation/editing dialog"""
@@ -551,6 +908,931 @@ class CampaignDialog(ctk.CTkToplevel):
         self.result = None
         self.destroy()
 
+class ResponseDialog(ctk.CTkToplevel):
+    """Dialog for manually recording a volunteer response."""
+
+    def __init__(
+        self,
+        parent,
+        volunteers: List[Dict[str, Any]],
+        campaigns: List[Dict[str, Any]]
+    ):
+        super().__init__(parent)
+        self.title("Record Response")
+        self.geometry("560x520")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.grab_set()
+
+        self.volunteers = volunteers or []
+        self.campaigns = campaigns or []
+        self.volunteer_options: Dict[str, str] = {}
+        self.campaign_options: Dict[str, Optional[int]] = {"No campaign": None}
+        self.result = None
+
+        self.setup_ui()
+        self.wait_window()
+
+    def setup_ui(self):
+        """Build response-entry controls."""
+        main_frame = ctk.CTkFrame(self)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        main_frame.grid_columnconfigure(1, weight=1)
+
+        volunteer_label = ctk.CTkLabel(main_frame, text="Volunteer:")
+        volunteer_label.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w")
+
+        volunteer_values = []
+        for volunteer in self.volunteers:
+            volunteer_id = volunteer.get("volunteer_id")
+            if not volunteer_id:
+                continue
+            label = f"{volunteer.get('name') or 'Unknown volunteer'} ({volunteer_id})"
+            volunteer_values.append(label)
+            self.volunteer_options[label] = volunteer_id
+
+        self.volunteer_combo = ctk.CTkComboBox(main_frame, values=volunteer_values, state="readonly")
+        self.volunteer_combo.grid(row=0, column=1, padx=10, pady=(10, 5), sticky="ew")
+        if volunteer_values:
+            self.volunteer_combo.set(volunteer_values[0])
+
+        campaign_label = ctk.CTkLabel(main_frame, text="Campaign:")
+        campaign_label.grid(row=1, column=0, padx=10, pady=5, sticky="w")
+
+        campaign_values = ["No campaign"]
+        for campaign in self.campaigns:
+            campaign_id = campaign.get("id")
+            if campaign_id is None:
+                continue
+            label = f"{campaign.get('name') or 'Campaign'} (#{campaign_id})"
+            campaign_values.append(label)
+            self.campaign_options[label] = campaign_id
+
+        self.campaign_combo = ctk.CTkComboBox(main_frame, values=campaign_values, state="readonly")
+        self.campaign_combo.grid(row=1, column=1, padx=10, pady=5, sticky="ew")
+        self.campaign_combo.set(campaign_values[0])
+
+        response_label = ctk.CTkLabel(main_frame, text="Response:")
+        response_label.grid(row=2, column=0, padx=10, pady=5, sticky="nw")
+
+        self.response_text = ctk.CTkTextbox(main_frame, height=260, width=360)
+        self.response_text.grid(row=2, column=1, padx=10, pady=5, sticky="ew")
+
+        button_frame = ctk.CTkFrame(main_frame)
+        button_frame.grid(row=3, column=0, columnspan=2, pady=20, sticky="ew")
+
+        cancel_button = ctk.CTkButton(button_frame, text="Cancel", command=self.cancel, width=100)
+        cancel_button.pack(side="right", padx=(10, 0))
+
+        save_button = ctk.CTkButton(button_frame, text="Record", command=self.save, width=100)
+        save_button.pack(side="right")
+
+    def save(self):
+        """Validate and store dialog result."""
+        selected_volunteer = self.volunteer_combo.get()
+        volunteer_id = self.volunteer_options.get(selected_volunteer)
+        raw_content = self.response_text.get("1.0", "end-1c").strip()
+
+        if not volunteer_id:
+            messagebox.showerror("Validation Error", "Select a volunteer.")
+            return
+        if not raw_content:
+            messagebox.showerror("Validation Error", "Enter the volunteer response.")
+            return
+
+        self.result = {
+            "volunteer_id": volunteer_id,
+            "campaign_id": self.campaign_options.get(self.campaign_combo.get()),
+            "raw_content": raw_content
+        }
+        self.destroy()
+
+    def cancel(self):
+        """Close without recording a response."""
+        self.destroy()
+
+class MessageReviewView(ctk.CTkFrame):
+    """Review queue for generated volunteer outreach drafts."""
+
+    def __init__(self, parent, data_callback: Callable = None, action_callback: Callable = None):
+        super().__init__(parent)
+        self.data_callback = data_callback
+        self.action_callback = action_callback
+
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+
+        self.setup_ui()
+        self.refresh_messages()
+
+    def setup_ui(self):
+        """Setup message review UI."""
+        header_frame = ctk.CTkFrame(self)
+        header_frame.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="ew")
+        header_frame.grid_columnconfigure(0, weight=1)
+
+        title_label = ctk.CTkLabel(
+            header_frame,
+            text="Message Review Queue",
+            font=ModernTheme.FONT_LARGE
+        )
+        title_label.grid(row=0, column=0, padx=15, pady=15, sticky="w")
+
+        refresh_button = ctk.CTkButton(
+            header_frame,
+            text="Refresh",
+            command=self.refresh_messages,
+            width=100
+        )
+        refresh_button.grid(row=0, column=1, padx=15, pady=15, sticky="e")
+
+        self.message_list = ctk.CTkScrollableFrame(self)
+        self.message_list.grid(row=1, column=0, padx=20, pady=10, sticky="nsew")
+        self.message_list.grid_columnconfigure(0, weight=1)
+
+    def refresh_messages(self):
+        """Refresh draft list from callback."""
+        for widget in self.message_list.winfo_children():
+            widget.destroy()
+
+        drafts = []
+        if self.data_callback:
+            try:
+                drafts = self.data_callback() or []
+            except (AttributeError, TypeError, RuntimeError, ValueError) as exc:
+                logger.error(f"Error loading message review data: {exc}")
+
+        if not drafts:
+            empty_label = ctk.CTkLabel(
+                self.message_list,
+                text="No draft messages are waiting for approval.",
+                font=ModernTheme.FONT_MEDIUM,
+                text_color=ModernTheme.TEXT_SECONDARY
+            )
+            empty_label.grid(row=0, column=0, padx=15, pady=20, sticky="w")
+            return
+
+        for row_index, draft in enumerate(drafts):
+            self.add_message_item(row_index, draft)
+
+    def add_message_item(self, row_index: int, draft: Dict[str, Any]):
+        """Add one draft review item."""
+        item_frame = ctk.CTkFrame(self.message_list)
+        item_frame.grid(row=row_index, column=0, padx=5, pady=6, sticky="ew")
+        item_frame.grid_columnconfigure(0, weight=1)
+
+        title = f"{draft.get('volunteer_name') or draft.get('volunteer_id')} - {draft.get('campaign_name') or 'Campaign'}"
+        title_label = ctk.CTkLabel(
+            item_frame,
+            text=title,
+            font=ModernTheme.FONT_MEDIUM
+        )
+        title_label.grid(row=0, column=0, padx=12, pady=(12, 4), sticky="w")
+
+        meta_label = ctk.CTkLabel(
+            item_frame,
+            text=f"Status: {draft.get('status', 'draft')} | Location: {draft.get('volunteer_location') or 'unknown'}",
+            font=ModernTheme.FONT_SMALL,
+            text_color=ModernTheme.TEXT_SECONDARY
+        )
+        meta_label.grid(row=1, column=0, padx=12, pady=(0, 6), sticky="w")
+
+        subject_entry = ctk.CTkEntry(item_frame, font=ModernTheme.FONT_SMALL)
+        subject_entry.grid(row=2, column=0, padx=12, pady=(0, 6), sticky="ew")
+        subject_entry.insert(0, draft.get("subject") or "")
+
+        body_text = ctk.CTkTextbox(item_frame, height=150, font=ModernTheme.FONT_SMALL)
+        body_text.grid(row=3, column=0, padx=12, pady=6, sticky="ew")
+        body_text.insert("1.0", (draft.get('body') or '').strip())
+
+        button_frame = ctk.CTkFrame(item_frame)
+        button_frame.grid(row=4, column=0, padx=12, pady=(6, 12), sticky="e")
+
+        save_button = ctk.CTkButton(
+            button_frame,
+            text="Save Edits",
+            command=lambda draft_id=draft['id'], subject=subject_entry, body=body_text: self.handle_edit(draft_id, subject, body),
+            width=110
+        )
+        save_button.pack(side="left", padx=5)
+
+        approve_button = ctk.CTkButton(
+            button_frame,
+            text="Approve",
+            command=lambda draft_id=draft['id']: self.handle_action("approve", draft_id),
+            width=100
+        )
+        approve_button.pack(side="left", padx=5)
+
+        reject_button = ctk.CTkButton(
+            button_frame,
+            text="Reject",
+            command=lambda draft_id=draft['id']: self.handle_action("reject", draft_id),
+            width=100,
+            fg_color=ModernTheme.ERROR_COLOR
+        )
+        reject_button.pack(side="left", padx=5)
+
+    def handle_action(self, action: str, draft_id: int):
+        """Handle approve/reject action."""
+        if self.action_callback:
+            self.action_callback(action, {"draft_id": draft_id})
+        self.refresh_messages()
+
+    def handle_edit(self, draft_id: int, subject_entry, body_text):
+        """Persist operator edits to a draft."""
+        if self.action_callback:
+            self.action_callback("edit", {
+                "draft_id": draft_id,
+                "subject": subject_entry.get(),
+                "body": body_text.get("1.0", "end-1c")
+            })
+        self.refresh_messages()
+
+class VolunteerDetailView(ctk.CTkFrame):
+    """Volunteer profile and outreach ledger detail view."""
+
+    def __init__(self, parent, data_callback: Callable = None, detail_callback: Callable = None):
+        super().__init__(parent)
+        self.data_callback = data_callback
+        self.detail_callback = detail_callback
+        self.selected_volunteer_id = None
+
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+
+        self.setup_ui()
+        self.refresh_volunteers()
+
+    def setup_ui(self):
+        """Setup volunteer detail UI."""
+        header_frame = ctk.CTkFrame(self)
+        header_frame.grid(row=0, column=0, columnspan=2, padx=20, pady=(20, 10), sticky="ew")
+        header_frame.grid_columnconfigure(0, weight=1)
+
+        title_label = ctk.CTkLabel(
+            header_frame,
+            text="Volunteer Profiles",
+            font=ModernTheme.FONT_LARGE
+        )
+        title_label.grid(row=0, column=0, padx=15, pady=15, sticky="w")
+
+        refresh_button = ctk.CTkButton(
+            header_frame,
+            text="Refresh",
+            command=self.refresh_volunteers,
+            width=100
+        )
+        refresh_button.grid(row=0, column=1, padx=15, pady=15, sticky="e")
+
+        list_frame = ctk.CTkFrame(self)
+        list_frame.grid(row=1, column=0, padx=20, pady=10, sticky="nsew")
+        list_frame.grid_columnconfigure(0, weight=1)
+        list_frame.grid_rowconfigure(1, weight=1)
+
+        list_title = ctk.CTkLabel(
+            list_frame,
+            text="Saved Volunteers",
+            font=ModernTheme.FONT_MEDIUM
+        )
+        list_title.grid(row=0, column=0, padx=15, pady=(15, 10), sticky="w")
+
+        self.volunteer_list = ctk.CTkScrollableFrame(list_frame, width=320)
+        self.volunteer_list.grid(row=1, column=0, padx=15, pady=(0, 15), sticky="nsew")
+        self.volunteer_list.grid_columnconfigure(0, weight=1)
+
+        detail_frame = ctk.CTkFrame(self)
+        detail_frame.grid(row=1, column=1, padx=(10, 20), pady=10, sticky="nsew")
+        detail_frame.grid_columnconfigure(0, weight=1)
+        detail_frame.grid_rowconfigure(1, weight=1)
+
+        detail_title = ctk.CTkLabel(
+            detail_frame,
+            text="Volunteer Detail",
+            font=ModernTheme.FONT_MEDIUM
+        )
+        detail_title.grid(row=0, column=0, padx=15, pady=(15, 10), sticky="w")
+
+        self.detail_text = ctk.CTkTextbox(detail_frame, font=ModernTheme.FONT_SMALL)
+        self.detail_text.grid(row=1, column=0, padx=15, pady=(0, 15), sticky="nsew")
+        self.show_empty_detail()
+
+    def refresh_volunteers(self):
+        """Refresh volunteer list."""
+        for widget in self.volunteer_list.winfo_children():
+            widget.destroy()
+
+        volunteers = []
+        if self.data_callback:
+            try:
+                volunteers = self.data_callback() or []
+            except (AttributeError, TypeError, RuntimeError, ValueError) as exc:
+                logger.error(f"Error loading volunteers: {exc}")
+
+        if not volunteers:
+            empty_label = ctk.CTkLabel(
+                self.volunteer_list,
+                text="No volunteers saved yet.",
+                font=ModernTheme.FONT_MEDIUM,
+                text_color=ModernTheme.TEXT_SECONDARY
+            )
+            empty_label.grid(row=0, column=0, padx=15, pady=20, sticky="w")
+            self.show_empty_detail()
+            return
+
+        for row_index, volunteer in enumerate(volunteers):
+            self.add_volunteer_item(row_index, volunteer)
+
+        if self.selected_volunteer_id:
+            self.show_volunteer_detail(self.selected_volunteer_id)
+
+    def add_volunteer_item(self, row_index: int, volunteer: Dict[str, Any]):
+        """Add one volunteer list item."""
+        item_frame = ctk.CTkFrame(self.volunteer_list)
+        item_frame.grid(row=row_index, column=0, padx=5, pady=6, sticky="ew")
+        item_frame.grid_columnconfigure(0, weight=1)
+
+        title = volunteer.get("name") or volunteer.get("volunteer_id") or "Unknown volunteer"
+        title_label = ctk.CTkLabel(
+            item_frame,
+            text=title,
+            font=ModernTheme.FONT_MEDIUM
+        )
+        title_label.grid(row=0, column=0, padx=10, pady=(10, 2), sticky="w")
+
+        meta_label = ctk.CTkLabel(
+            item_frame,
+            text=f"{volunteer.get('location') or 'Unknown location'} | {volunteer.get('categories') or 'No categories'}",
+            font=ModernTheme.FONT_SMALL,
+            text_color=ModernTheme.TEXT_SECONDARY
+        )
+        meta_label.grid(row=1, column=0, padx=10, pady=(0, 8), sticky="w")
+
+        select_button = ctk.CTkButton(
+            item_frame,
+            text="Select",
+            command=lambda volunteer_id=volunteer.get("volunteer_id"): self.show_volunteer_detail(volunteer_id),
+            width=90
+        )
+        select_button.grid(row=2, column=0, padx=10, pady=(0, 10), sticky="e")
+
+    def show_empty_detail(self):
+        """Show empty-state detail copy."""
+        self.selected_volunteer_id = None
+        self.detail_text.configure(state="normal")
+        self.detail_text.delete("1.0", "end")
+        self.detail_text.insert("1.0", "Select a volunteer to inspect profile, match, contact, response, follow-up, and duplicate context.")
+        self.detail_text.configure(state="disabled")
+
+    def show_volunteer_detail(self, volunteer_id: str):
+        """Load and render one volunteer operating profile."""
+        if not volunteer_id:
+            self.show_empty_detail()
+            return
+
+        self.selected_volunteer_id = volunteer_id
+        profile = None
+        if self.detail_callback:
+            try:
+                profile = self.detail_callback(volunteer_id)
+            except (AttributeError, TypeError, RuntimeError, ValueError) as exc:
+                logger.error(f"Error loading volunteer detail: {exc}")
+
+        self.detail_text.configure(state="normal")
+        self.detail_text.delete("1.0", "end")
+        self.detail_text.insert("1.0", self.format_profile(profile))
+        self.detail_text.configure(state="disabled")
+
+    def format_profile(self, profile: Optional[Dict[str, Any]]) -> str:
+        """Format one volunteer operating profile."""
+        if not profile:
+            return "Volunteer profile could not be loaded."
+
+        volunteer = profile.get("volunteer") or {}
+        lines = [
+            f"Name: {volunteer.get('name') or 'Unknown volunteer'}",
+            f"Volunteer ID: {volunteer.get('volunteer_id') or ''}",
+            f"Location: {volunteer.get('location') or 'Unknown'}",
+            f"Categories: {volunteer.get('categories') or 'Unknown'}",
+            f"Skills: {volunteer.get('skills') or 'Unknown'}",
+            f"Availability: {volunteer.get('availability') or 'Unknown'}",
+            f"Source URL: {volunteer.get('profile_url') or 'Not saved'}",
+            f"Updated: {volunteer.get('updated_at') or 'Unknown'}",
+            "",
+            "Description:",
+            volunteer.get("description") or "No description saved."
+        ]
+
+        self.append_section(lines, "Match Assessments", profile.get("match_assessments") or [], self.format_match)
+        self.append_section(lines, "Contact History", profile.get("contacts") or [], self.format_contact)
+        self.append_section(lines, "Responses", profile.get("responses") or [], self.format_response)
+        self.append_section(lines, "Follow-ups", profile.get("follow_ups") or [], self.format_follow_up)
+        self.append_section(lines, "Outcomes", profile.get("outcomes") or [], self.format_outcome)
+        self.append_section(lines, "Duplicate Groups", profile.get("duplicate_identities") or [], self.format_duplicate)
+
+        return "\n".join(lines)
+
+    def append_section(self, lines: List[str], title: str, items: List[Dict[str, Any]], formatter: Callable):
+        """Append a compact profile section."""
+        lines.extend(["", title + ":"])
+        if not items:
+            lines.append("- None recorded")
+            return
+        for item in items[:10]:
+            lines.append(formatter(item))
+
+    def format_match(self, item: Dict[str, Any]) -> str:
+        return (
+            f"- {item.get('campaign_name') or 'Campaign'}: "
+            f"{item.get('status', 'unknown')} fit, score {item.get('score', 0):.0f}; "
+            f"reasons {item.get('reasons_json') or '[]'}"
+        )
+
+    def format_contact(self, item: Dict[str, Any]) -> str:
+        return (
+            f"- {item.get('contact_date') or 'Unknown date'} | "
+            f"{item.get('campaign_name') or 'No campaign'} | "
+            f"status {item.get('status', 'unknown')}"
+        )
+
+    def format_response(self, item: Dict[str, Any]) -> str:
+        return (
+            f"- {item.get('received_at') or 'Unknown date'} | "
+            f"{item.get('campaign_name') or 'No campaign'} | "
+            f"{item.get('classification', 'unknown')}: {item.get('raw_content') or ''}"
+        )
+
+    def format_follow_up(self, item: Dict[str, Any]) -> str:
+        return (
+            f"- Due {item.get('due_at') or 'unknown'} | "
+            f"{item.get('campaign_name') or 'No campaign'} | "
+            f"status {item.get('status', 'unknown')}: {item.get('suggested_message') or ''}"
+        )
+
+    def format_duplicate(self, item: Dict[str, Any]) -> str:
+        return (
+            f"- Group {item.get('id')} | status {item.get('status', 'unknown')} | "
+            f"canonical {item.get('canonical_volunteer_id')}; members {item.get('volunteer_ids') or ''}"
+        )
+
+class LedgerListView(ctk.CTkFrame):
+    """Reusable read-first view for operational ledger queues."""
+
+    def __init__(
+        self,
+        parent,
+        title: str,
+        empty_text: str,
+        data_callback: Callable = None,
+        action_callback: Callable = None,
+        item_kind: str = "ledger",
+        header_action_text: str = "",
+        secondary_header_action_text: str = "",
+        secondary_header_action_name: str = "secondary_header_action"
+    ):
+        super().__init__(parent)
+        self.title = title
+        self.empty_text = empty_text
+        self.data_callback = data_callback
+        self.action_callback = action_callback
+        self.item_kind = item_kind
+        self.header_action_text = header_action_text
+        self.secondary_header_action_text = secondary_header_action_text
+        self.secondary_header_action_name = secondary_header_action_name
+
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+
+        self.setup_ui()
+        self.refresh_items()
+
+    def setup_ui(self):
+        """Setup generic ledger list UI."""
+        header_frame = ctk.CTkFrame(self)
+        header_frame.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="ew")
+        header_frame.grid_columnconfigure(0, weight=1)
+
+        title_label = ctk.CTkLabel(
+            header_frame,
+            text=self.title,
+            font=ModernTheme.FONT_LARGE
+        )
+        title_label.grid(row=0, column=0, padx=15, pady=15, sticky="w")
+
+        next_column = 1
+        if self.header_action_text and self.action_callback:
+            action_button = ctk.CTkButton(
+                header_frame,
+                text=self.header_action_text,
+                command=self.handle_header_action,
+                width=140
+            )
+            action_button.grid(row=0, column=next_column, padx=(15, 5), pady=15, sticky="e")
+            next_column += 1
+
+        if self.secondary_header_action_text and self.action_callback:
+            secondary_action_button = ctk.CTkButton(
+                header_frame,
+                text=self.secondary_header_action_text,
+                command=self.handle_secondary_header_action,
+                width=120
+            )
+            secondary_action_button.grid(row=0, column=next_column, padx=5, pady=15, sticky="e")
+            next_column += 1
+
+        refresh_button = ctk.CTkButton(
+            header_frame,
+            text="Refresh",
+            command=self.refresh_items,
+            width=100
+        )
+        refresh_button.grid(row=0, column=next_column, padx=15, pady=15, sticky="e")
+
+        self.item_list = ctk.CTkScrollableFrame(self)
+        self.item_list.grid(row=1, column=0, padx=20, pady=10, sticky="nsew")
+        self.item_list.grid_columnconfigure(0, weight=1)
+
+    def refresh_items(self):
+        """Refresh list data from callback."""
+        for widget in self.item_list.winfo_children():
+            widget.destroy()
+
+        items = []
+        if self.data_callback:
+            try:
+                items = self.data_callback() or []
+            except (AttributeError, TypeError, RuntimeError, ValueError) as exc:
+                logger.error(f"Error loading {self.title}: {exc}")
+
+        if not items:
+            empty_label = ctk.CTkLabel(
+                self.item_list,
+                text=self.empty_text,
+                font=ModernTheme.FONT_MEDIUM,
+                text_color=ModernTheme.TEXT_SECONDARY
+            )
+            empty_label.grid(row=0, column=0, padx=15, pady=20, sticky="w")
+            return
+
+        for row_index, item in enumerate(items):
+            self.add_item(row_index, item)
+
+    def add_item(self, row_index: int, item: Dict[str, Any]):
+        """Add one ledger item."""
+        item_frame = ctk.CTkFrame(self.item_list)
+        item_frame.grid(row=row_index, column=0, padx=5, pady=6, sticky="ew")
+        item_frame.grid_columnconfigure(0, weight=1)
+
+        title, subtitle, body = self.format_item(item)
+
+        title_label = ctk.CTkLabel(
+            item_frame,
+            text=title,
+            font=ModernTheme.FONT_MEDIUM
+        )
+        title_label.grid(row=0, column=0, padx=12, pady=(12, 4), sticky="w")
+
+        subtitle_label = ctk.CTkLabel(
+            item_frame,
+            text=subtitle,
+            font=ModernTheme.FONT_SMALL,
+            text_color=ModernTheme.TEXT_SECONDARY
+        )
+        subtitle_label.grid(row=1, column=0, padx=12, pady=(0, 6), sticky="w")
+
+        body_text = ctk.CTkTextbox(item_frame, height=90, font=ModernTheme.FONT_SMALL)
+        body_text.grid(row=2, column=0, padx=12, pady=(0, 12), sticky="ew")
+        body_text.insert("1.0", body)
+        body_text.configure(state="disabled")
+
+        if self.item_kind == "responses" and self.action_callback:
+            button_frame = ctk.CTkFrame(item_frame)
+            button_frame.grid(row=3, column=0, padx=12, pady=(0, 12), sticky="e")
+
+            outcome_buttons = [
+                ("Interested", "interested", ModernTheme.SUCCESS_COLOR),
+                ("Declined", "declined", ModernTheme.WARNING_COLOR),
+                ("Unavailable", "unavailable", ModernTheme.TEXT_SECONDARY)
+            ]
+            for label, outcome_type, color in outcome_buttons:
+                outcome_button = ctk.CTkButton(
+                    button_frame,
+                    text=label,
+                    command=lambda current=item, selected=outcome_type: self.handle_item_action(
+                        "record_outcome",
+                        {
+                            "volunteer_id": current.get("volunteer_id"),
+                            "campaign_id": current.get("campaign_id"),
+                            "response_id": current.get("id"),
+                            "outcome_type": selected,
+                            "notes": f"Outcome recorded from response {current.get('id')} in Response Inbox"
+                        }
+                    ),
+                    width=110,
+                    fg_color=color
+                )
+                outcome_button.pack(side="left", padx=5)
+        elif self.item_kind == "followups" and self.action_callback:
+            button_frame = ctk.CTkFrame(item_frame)
+            button_frame.grid(row=3, column=0, padx=12, pady=(0, 12), sticky="e")
+
+            status = item.get("status", "due")
+            if status == "due":
+                approve_button = ctk.CTkButton(
+                    button_frame,
+                    text="Approve",
+                    command=lambda item_id=item["id"]: self.handle_follow_up_action("approve", item_id),
+                    width=100
+                )
+                approve_button.pack(side="left", padx=5)
+
+            if status == "approved":
+                confirm_button = ctk.CTkButton(
+                    button_frame,
+                    text="Confirm Sent",
+                    command=lambda item_id=item["id"]: self.handle_follow_up_action("confirm_sent", item_id),
+                    width=120
+                )
+                confirm_button.pack(side="left", padx=5)
+
+            if status == "sent":
+                complete_button = ctk.CTkButton(
+                    button_frame,
+                    text="Complete",
+                    command=lambda item_id=item["id"]: self.handle_follow_up_action("complete", item_id),
+                    width=100
+                )
+                complete_button.pack(side="left", padx=5)
+
+            if status in {"sent", "completed"}:
+                for label, outcome_type, color in [
+                    ("Interested", "interested", ModernTheme.SUCCESS_COLOR),
+                    ("Declined", "declined", ModernTheme.WARNING_COLOR),
+                    ("Unavailable", "unavailable", ModernTheme.TEXT_SECONDARY)
+                ]:
+                    outcome_button = ctk.CTkButton(
+                        button_frame,
+                        text=label,
+                        command=lambda current=item, selected=outcome_type: self.handle_item_action(
+                            "record_outcome",
+                            {
+                                "follow_up_id": current.get("id"),
+                                "volunteer_id": current.get("volunteer_id"),
+                                "campaign_id": current.get("campaign_id"),
+                                "outcome_type": selected,
+                                "notes": f"Outcome recorded from follow-up {current.get('id')} in Follow-up Queue"
+                            }
+                        ),
+                        width=110,
+                        fg_color=color
+                    )
+                    outcome_button.pack(side="left", padx=5)
+
+            if status not in {"completed", "cancelled"}:
+                cancel_button = ctk.CTkButton(
+                    button_frame,
+                    text="Cancel",
+                    command=lambda item_id=item["id"]: self.handle_follow_up_action("cancel", item_id),
+                    width=100,
+                    fg_color=ModernTheme.WARNING_COLOR
+                )
+                cancel_button.pack(side="left", padx=5)
+        elif (
+            self.item_kind == "send_attempts"
+            and self.action_callback
+            and item.get("status") != "sent"
+            and item.get("message_draft_id") is not None
+        ):
+            button_frame = ctk.CTkFrame(item_frame)
+            button_frame.grid(row=3, column=0, padx=12, pady=(0, 12), sticky="e")
+
+            confirm_button = ctk.CTkButton(
+                button_frame,
+                text="Confirm Sent",
+                command=lambda draft_id=item["message_draft_id"]: self.handle_item_action(
+                    "confirm_sent",
+                    {"draft_id": draft_id}
+                ),
+                width=120
+            )
+            confirm_button.pack(side="left", padx=5)
+        elif self.item_kind == "duplicates" and self.action_callback and item.get("status") != "confirmed":
+            button_frame = ctk.CTkFrame(item_frame)
+            button_frame.grid(row=3, column=0, padx=12, pady=(0, 12), sticky="e")
+
+            confirm_button = ctk.CTkButton(
+                button_frame,
+                text="Confirm Group",
+                command=lambda current=item: self.handle_item_action(
+                    "confirm",
+                    {
+                        "identity_id": current["id"],
+                        "canonical_volunteer_id": current["canonical_volunteer_id"]
+                    }
+                ),
+                width=130
+            )
+            confirm_button.pack(side="left", padx=5)
+        elif (
+            self.item_kind == "privacy"
+            and self.action_callback
+            and item.get("volunteer_id")
+            and item.get("status") != "completed"
+            and item.get("retention_status") not in {"archived", "redacted"}
+        ):
+            button_frame = ctk.CTkFrame(item_frame)
+            button_frame.grid(row=3, column=0, padx=12, pady=(0, 12), sticky="e")
+
+            archive_button = ctk.CTkButton(
+                button_frame,
+                text="Archive",
+                command=lambda volunteer_id=item["volunteer_id"]: self.handle_item_action(
+                    "archive",
+                    {"volunteer_id": volunteer_id}
+                ),
+                width=100
+            )
+            archive_button.pack(side="left", padx=5)
+
+            redact_button = ctk.CTkButton(
+                button_frame,
+                text="Redact",
+                command=lambda volunteer_id=item["volunteer_id"]: self.handle_item_action(
+                    "redact",
+                    {"volunteer_id": volunteer_id}
+                ),
+                width=100,
+                fg_color=ModernTheme.WARNING_COLOR
+            )
+            redact_button.pack(side="left", padx=5)
+
+    def handle_follow_up_action(self, action: str, follow_up_id: int):
+        """Handle a follow-up queue action."""
+        if self.action_callback:
+            self.action_callback(action, {"follow_up_id": follow_up_id})
+        self.refresh_items()
+
+    def handle_header_action(self):
+        """Handle a view-level action."""
+        if self.action_callback:
+            self.action_callback("header_action", {})
+        self.refresh_items()
+
+    def handle_secondary_header_action(self):
+        """Handle a secondary view-level action."""
+        if self.action_callback:
+            self.action_callback(self.secondary_header_action_name, {})
+        self.refresh_items()
+
+    def handle_item_action(self, action: str, data: Dict[str, Any]):
+        """Handle a record-level action."""
+        if self.action_callback:
+            self.action_callback(action, data)
+        self.refresh_items()
+
+    def format_item(self, item: Dict[str, Any]) -> tuple[str, str, str]:
+        """Format one item for compact display."""
+        if self.item_kind == "responses":
+            title = item.get("volunteer_name") or item.get("volunteer_id") or "Unknown volunteer"
+            subtitle = (
+                f"{item.get('classification', 'unknown')} "
+                f"({item.get('confidence', 0):.2f}) | "
+                f"{item.get('campaign_name') or 'No campaign'} | "
+                f"{item.get('received_at') or 'Unknown date'}"
+            )
+            body = item.get("raw_content") or ""
+        elif self.item_kind == "followups":
+            title = item.get("volunteer_name") or item.get("volunteer_id") or "Unknown volunteer"
+            subtitle = (
+                f"Due: {item.get('due_at') or 'unknown'} | "
+                f"{item.get('campaign_name') or 'No campaign'} | "
+                f"Status: {item.get('status', 'due')}"
+            )
+            body = item.get("suggested_message") or "No suggested message saved."
+        elif self.item_kind == "audit":
+            title = f"{item.get('action', 'event')} on {item.get('entity_type', 'entity')} #{item.get('entity_id', '')}"
+            subtitle = (
+                f"Actor: {item.get('actor', 'system')} | "
+                f"Risk: {item.get('risk_level', 'low')} | "
+                f"{item.get('created_at') or 'Unknown date'}"
+            )
+            body = "\n".join([
+                f"Before: {item.get('before_state') or '{}'}",
+                f"After: {item.get('after_state') or '{}'}"
+            ])
+        elif self.item_kind == "privacy":
+            if item.get("action"):
+                title = item.get("volunteer_name") or item.get("volunteer_id") or "Retention action"
+                subtitle = (
+                    f"{item.get('action', 'action')} | "
+                    f"Status: {item.get('status', 'proposed')} | "
+                    f"{item.get('created_at') or 'Unknown date'}"
+                )
+                body = "\n".join([
+                    f"Reason: {item.get('reason') or 'No reason saved.'}",
+                    f"Actor: {item.get('actor') or 'system'}",
+                    f"Evidence: {item.get('evidence_json') or '{}'}"
+                ])
+            else:
+                title = item.get("name") or item.get("volunteer_id") or "Unknown volunteer"
+                subtitle = (
+                    f"Updated: {item.get('updated_at') or 'unknown'} | "
+                    f"{item.get('location') or 'Unknown location'}"
+                )
+                body = "\n".join([
+                    f"Volunteer ID: {item.get('volunteer_id')}",
+                    f"Retention status: {item.get('retention_status') or 'active'}",
+                    f"Categories: {item.get('categories') or 'unknown'}",
+                    f"Contacts: {item.get('contact_count', 0)}; responses: {item.get('response_count', 0)}",
+                    f"Last contact: {item.get('last_contact_at') or 'never'}",
+                    f"Last response: {item.get('last_response_at') or 'never'}"
+                ])
+        elif self.item_kind == "privacy_actions":
+            title = item.get("volunteer_name") or item.get("volunteer_id") or "Retention action"
+            subtitle = (
+                f"{item.get('action', 'action')} | "
+                f"Status: {item.get('status', 'proposed')} | "
+                f"{item.get('created_at') or 'Unknown date'}"
+            )
+            body = "\n".join([
+                f"Reason: {item.get('reason') or 'No reason saved.'}",
+                f"Actor: {item.get('actor') or 'system'}",
+                f"Evidence: {item.get('evidence_json') or '{}'}"
+            ])
+        elif self.item_kind == "matches":
+            title = item.get("volunteer_name") or item.get("volunteer_id") or "Unknown volunteer"
+            subtitle = (
+                f"Score: {item.get('score', 0):.0f} | "
+                f"Fit: {item.get('status', 'possible')} | "
+                f"{item.get('campaign_name') or 'Campaign'}"
+            )
+            body = "\n".join([
+                f"Location: {item.get('volunteer_location') or 'unknown'}",
+                f"Categories: {item.get('volunteer_categories') or 'unknown'}",
+                f"Skills: {item.get('volunteer_skills') or 'unknown'}",
+                f"Reasons: {item.get('reasons_json') or '[]'}"
+            ])
+        elif self.item_kind == "send_attempts":
+            title = item.get("volunteer_name") or item.get("volunteer_id") or "Unknown volunteer"
+            subtitle = (
+                f"Type: {item.get('attempt_type', 'message')} | "
+                f"Status: {item.get('status', 'unknown')} | "
+                f"{item.get('campaign_name') or 'Campaign'} | "
+                f"Started: {item.get('started_at') or 'unknown'}"
+            )
+            body = "\n".join([
+                f"Draft ID: {item.get('message_draft_id')}",
+                f"Follow-up ID: {item.get('follow_up_id') or 'none'}",
+                f"Finished: {item.get('finished_at') or 'not finished'}",
+                f"Retry count: {item.get('retry_count', 0)}",
+                f"Evidence: {item.get('delivery_evidence') or 'none'}",
+                f"Error: {item.get('error_message') or 'none'}"
+            ])
+        elif self.item_kind == "searches":
+            title = item.get("task_id") or f"Search #{item.get('id')}"
+            subtitle = (
+                f"Status: {item.get('status', 'unknown')} | "
+                f"Results: {item.get('linked_result_count', item.get('result_count', 0))} | "
+                f"Started: {item.get('started_at') or item.get('created_at') or 'unknown'}"
+            )
+            body = "\n".join([
+                f"Criteria: {item.get('criteria_json') or '{}'}",
+                f"Volunteer IDs: {item.get('volunteer_ids') or 'none'}",
+                f"Finished: {item.get('finished_at') or 'not finished'}",
+                f"Error: {item.get('error_message') or 'none'}"
+            ])
+        elif self.item_kind == "tasks":
+            title = item.get("name") or item.get("task_id") or "Task"
+            subtitle = (
+                f"Status: {item.get('status', 'unknown')} | "
+                f"Updated: {item.get('updated_at') or 'unknown'}"
+            )
+            body = "\n".join([
+                f"Task ID: {item.get('task_id')}",
+                f"Description: {item.get('description') or ''}",
+                f"Started: {item.get('started_at') or 'not started'}",
+                f"Completed: {item.get('completed_at') or 'not completed'}",
+                f"Progress: {item.get('progress_json') or '{}'}",
+                f"Error: {item.get('error_message') or 'none'}"
+            ])
+        elif self.item_kind == "duplicates":
+            title = item.get("canonical_name") or item.get("canonical_volunteer_id") or "Duplicate group"
+            subtitle = (
+                f"Status: {item.get('status', 'proposed')} | "
+                f"Canonical: {item.get('canonical_volunteer_id')}"
+            )
+            body = "\n".join([
+                f"Volunteer IDs: {item.get('volunteer_ids') or ''}",
+                f"Volunteer names: {item.get('volunteer_names') or ''}",
+                f"Notes: {item.get('notes') or ''}"
+            ])
+        else:
+            title = str(item.get("id", "Item"))
+            subtitle = self.item_kind
+            body = "\n".join(f"{key}: {value}" for key, value in item.items())
+
+        return title, subtitle, body
+
 class MainApplication(ctk.CTk):
     """Main application window with modern UI"""
     
@@ -572,7 +1854,6 @@ class MainApplication(ctk.CTk):
         # Sidebar
         self.sidebar = ctk.CTkFrame(self, width=200, corner_radius=0)
         self.sidebar.grid(row=0, column=0, sticky="nsew")
-        self.sidebar.grid_rowconfigure(6, weight=1)
         
         # Logo/Title
         logo_label = ctk.CTkLabel(
@@ -588,9 +1869,19 @@ class MainApplication(ctk.CTk):
             ("Dashboard", "dashboard"),
             ("Campaigns", "campaigns"),
             ("Volunteers", "volunteers"),
+            ("Matches", "matches"),
+            ("Duplicates", "duplicates"),
             ("Messages", "messages"),
+            ("Send History", "sends"),
+            ("Responses", "responses"),
+            ("Follow-ups", "followups"),
+            ("Searches", "searches"),
+            ("Tasks", "tasks"),
+            ("Audit", "audit"),
+            ("Privacy", "privacy"),
             ("Settings", "settings")
         ]
+        self.sidebar.grid_rowconfigure(len(nav_items) + 1, weight=1)
         
         for i, (text, key) in enumerate(nav_items, 1):
             button = ctk.CTkButton(
@@ -605,7 +1896,7 @@ class MainApplication(ctk.CTk):
             
         # Status section
         status_frame = ctk.CTkFrame(self.sidebar)
-        status_frame.grid(row=7, column=0, padx=20, pady=20, sticky="ew")
+        status_frame.grid(row=len(nav_items) + 2, column=0, padx=20, pady=20, sticky="ew")
         
         status_title = ctk.CTkLabel(
             status_frame,
@@ -655,7 +1946,104 @@ class MainApplication(ctk.CTk):
             elif view_name == "campaigns":
                 self.views[view_name] = CampaignView(
                     self.content_frame,
-                    campaign_callback=self.handle_campaign_action
+                    campaign_callback=self.handle_campaign_action,
+                    data_callback=self.get_campaign_data,
+                    readiness_callback=self.get_campaign_readiness,
+                    operating_summary_callback=self.get_campaign_operating_summary
+                )
+            elif view_name == "messages":
+                self.views[view_name] = MessageReviewView(
+                    self.content_frame,
+                    data_callback=self.get_message_review_data,
+                    action_callback=self.handle_message_action
+                )
+            elif view_name == "volunteers":
+                self.views[view_name] = VolunteerDetailView(
+                    self.content_frame,
+                    data_callback=self.get_volunteer_data,
+                    detail_callback=self.get_volunteer_detail_data
+                )
+            elif view_name == "matches":
+                self.views[view_name] = LedgerListView(
+                    self.content_frame,
+                    title="Match Assessments",
+                    empty_text="No volunteer matches have been assessed.",
+                    data_callback=self.get_match_assessment_data,
+                    item_kind="matches"
+                )
+            elif view_name == "duplicates":
+                self.views[view_name] = LedgerListView(
+                    self.content_frame,
+                    title="Duplicate Review",
+                    empty_text="No duplicate identity proposals have been recorded.",
+                    data_callback=self.get_duplicate_identity_data,
+                    action_callback=self.handle_duplicate_action,
+                    item_kind="duplicates",
+                    header_action_text="Find Duplicates"
+                )
+            elif view_name == "sends":
+                self.views[view_name] = LedgerListView(
+                    self.content_frame,
+                    title="Send Attempt History",
+                    empty_text="No send attempts have been recorded.",
+                    data_callback=self.get_send_attempt_data,
+                    action_callback=self.handle_send_attempt_action,
+                    item_kind="send_attempts"
+                )
+            elif view_name == "responses":
+                self.views[view_name] = LedgerListView(
+                    self.content_frame,
+                    title="Response Inbox",
+                    empty_text="No volunteer responses have been recorded.",
+                    data_callback=self.get_response_inbox_data,
+                    action_callback=self.handle_response_action,
+                    item_kind="responses",
+                    header_action_text="Record Response"
+                )
+            elif view_name == "followups":
+                self.views[view_name] = LedgerListView(
+                    self.content_frame,
+                    title="Follow-up Queue",
+                    empty_text="No follow-ups are due or scheduled.",
+                    data_callback=self.get_follow_up_data,
+                    action_callback=self.handle_follow_up_action,
+                    item_kind="followups"
+                )
+            elif view_name == "searches":
+                self.views[view_name] = LedgerListView(
+                    self.content_frame,
+                    title="Search Sessions",
+                    empty_text="No volunteer search sessions have been recorded.",
+                    data_callback=self.get_search_session_data,
+                    item_kind="searches"
+                )
+            elif view_name == "tasks":
+                self.views[view_name] = LedgerListView(
+                    self.content_frame,
+                    title="Task Runs",
+                    empty_text="No background task runs have been recorded.",
+                    data_callback=self.get_task_run_data,
+                    item_kind="tasks"
+                )
+            elif view_name == "audit":
+                self.views[view_name] = LedgerListView(
+                    self.content_frame,
+                    title="Audit Log",
+                    empty_text="No audit events have been recorded.",
+                    data_callback=self.get_audit_log_data,
+                    item_kind="audit"
+                )
+            elif view_name == "privacy":
+                self.views[view_name] = LedgerListView(
+                    self.content_frame,
+                    title="Privacy Review",
+                    empty_text="No stale volunteer records need retention review.",
+                    data_callback=self.get_privacy_review_data,
+                    action_callback=self.handle_privacy_action,
+                    item_kind="privacy",
+                    header_action_text="Record Proposals",
+                    secondary_header_action_text="Export JSON",
+                    secondary_header_action_name="export_json"
                 )
             else:
                 # Placeholder for other views
@@ -693,8 +2081,92 @@ class MainApplication(ctk.CTk):
     def handle_campaign_action(self, action: str, data: Dict[str, Any]):
         """Handle campaign actions"""
         if action == "create":
-            logger.info(f"Creating campaign: {data['name']}")
+            logger.info("Creating campaign from UI")
             self.status_bar.set_status(f"Campaign '{data['name']}' created", "success")
+
+    def get_campaign_data(self) -> List[Dict[str, Any]]:
+        """Get campaign data (placeholder for controller override)."""
+        return []
+
+    def get_campaign_readiness(self, campaign_id: int) -> Dict[str, Any]:
+        """Get campaign readiness (placeholder for controller override)."""
+        return {"ready": False, "status": "unknown", "issues": [], "next_actions": []}
+
+    def get_campaign_operating_summary(self, campaign_id: int) -> Dict[str, Any]:
+        """Get campaign operating summary (placeholder for controller override)."""
+        return {}
+
+    def get_message_review_data(self) -> List[Dict[str, Any]]:
+        """Get message review data (placeholder for controller override)."""
+        return []
+
+    def handle_message_action(self, action: str, data: Dict[str, Any]):
+        """Handle message review actions (placeholder for controller override)."""
+        logger.info("Message action requested: %s", action)
+
+    def handle_response_action(self, action: str, data: Dict[str, Any]):
+        """Handle response actions (placeholder for controller override)."""
+        logger.info("Response action requested: %s", action)
+
+    def get_match_assessment_data(self) -> List[Dict[str, Any]]:
+        """Get match assessment data (placeholder for controller override)."""
+        return []
+
+    def get_volunteer_data(self) -> List[Dict[str, Any]]:
+        """Get volunteer data (placeholder for controller override)."""
+        return []
+
+    def get_volunteer_detail_data(self, volunteer_id: str) -> Optional[Dict[str, Any]]:
+        """Get volunteer detail data (placeholder for controller override)."""
+        return None
+
+    def get_send_attempt_data(self) -> List[Dict[str, Any]]:
+        """Get send attempt data (placeholder for controller override)."""
+        return []
+
+    def handle_send_attempt_action(self, action: str, data: Dict[str, Any]):
+        """Handle send attempt actions (placeholder for controller override)."""
+        logger.info("Send attempt action requested: %s", action)
+
+    def get_duplicate_identity_data(self) -> List[Dict[str, Any]]:
+        """Get duplicate identity data (placeholder for controller override)."""
+        return []
+
+    def handle_duplicate_action(self, action: str, data: Dict[str, Any]):
+        """Handle duplicate identity actions (placeholder for controller override)."""
+        logger.info("Duplicate action requested: %s", action)
+
+    def get_response_inbox_data(self) -> List[Dict[str, Any]]:
+        """Get response inbox data (placeholder for controller override)."""
+        return []
+
+    def get_follow_up_data(self) -> List[Dict[str, Any]]:
+        """Get follow-up data (placeholder for controller override)."""
+        return []
+
+    def get_audit_log_data(self) -> List[Dict[str, Any]]:
+        """Get audit log data (placeholder for controller override)."""
+        return []
+
+    def get_task_run_data(self) -> List[Dict[str, Any]]:
+        """Get task run data (placeholder for controller override)."""
+        return []
+
+    def get_search_session_data(self) -> List[Dict[str, Any]]:
+        """Get search session data (placeholder for controller override)."""
+        return []
+
+    def get_privacy_review_data(self) -> List[Dict[str, Any]]:
+        """Get privacy review data (placeholder for controller override)."""
+        return []
+
+    def handle_follow_up_action(self, action: str, data: Dict[str, Any]):
+        """Handle follow-up actions (placeholder for controller override)."""
+        logger.info("Follow-up action requested: %s", action)
+
+    def handle_privacy_action(self, action: str, data: Dict[str, Any]):
+        """Handle privacy actions (placeholder for controller override)."""
+        logger.info("Privacy action requested: %s", action)
             
     def show_progress_dialog(self, title: str, message: str) -> ProgressDialog:
         """Show progress dialog"""

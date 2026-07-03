@@ -7,15 +7,25 @@ import asyncio
 import json
 import time
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 from enum import Enum
+import sqlite3
 
-from .volunteer_data_service import VolunteerDataService
+try:
+    from .volunteer_data_service import VolunteerDataService
+except ModuleNotFoundError:
+    from services.volunteer_data_service import VolunteerDataService
 from .async_task_manager import AsyncTaskManager
-from ..database.database_manager import DatabaseManager
-from ..utils.credential_manager import CredentialManager
+try:
+    from database.database_manager import DatabaseManager
+except ImportError:
+    from ..database.database_manager import DatabaseManager
+try:
+    from utils.credential_manager import CredentialManager
+except ImportError:
+    from ..utils.credential_manager import CredentialManager
 
 class CampaignStatus(Enum):
     DRAFT = "draft"
@@ -97,11 +107,11 @@ class CampaignManager:
             self.db_manager.create_campaign(campaign_data)
             self.active_campaigns[campaign_id] = campaign_data
             
-            self.logger.info(f"Created campaign: {name} ({campaign_id})")
+            self.logger.info("Created campaign ID %s", campaign_id)
             return campaign_id
             
-        except Exception as e:
-            self.logger.error(f"Error creating campaign: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, sqlite3.DatabaseError) as e:
+            self.logger.error("Error creating campaign: %s", type(e).__name__)
             return ""
     
     def start_campaign(self, campaign_id: str) -> bool:
@@ -133,8 +143,8 @@ class CampaignManager:
             self.logger.info(f"Started campaign {campaign_id} targeting {len(target_volunteers['all'])} volunteers")
             return True
             
-        except Exception as e:
-            self.logger.error(f"Error starting campaign: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, sqlite3.DatabaseError) as e:
+            self.logger.error("Error starting campaign: %s", type(e).__name__)
             return False
     
     def _get_target_volunteers(self, target: CampaignTarget) -> Dict[str, List[Dict]]:
@@ -177,8 +187,8 @@ class CampaignManager:
             
             return target_volunteers
             
-        except Exception as e:
-            self.logger.error(f"Error getting target volunteers: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, sqlite3.DatabaseError) as e:
+            self.logger.error("Error getting target volunteers: %s", type(e).__name__)
             return target_volunteers
     
     def _filter_volunteers(self, volunteers: List[Dict], criteria: Dict) -> List[Dict]:
@@ -247,8 +257,8 @@ class CampaignManager:
             
             self.logger.info(f"Queued {len(tasks)} direct messages for campaign {campaign_id}")
             
-        except Exception as e:
-            self.logger.error(f"Error executing visible volunteer campaign: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, sqlite3.DatabaseError) as e:
+            self.logger.error("Error executing visible volunteer campaign: %s", type(e).__name__)
     
     def _execute_hidden_volunteer_campaign(self, campaign_id: str, volunteers: List[Dict]):
         """
@@ -277,8 +287,8 @@ class CampaignManager:
             
             self.logger.info(f"Queued {len(tasks)} strategic requests for campaign {campaign_id}")
             
-        except Exception as e:
-            self.logger.error(f"Error executing hidden volunteer campaign: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, sqlite3.DatabaseError) as e:
+            self.logger.error("Error executing hidden volunteer campaign: %s", type(e).__name__)
     
     def _group_volunteers_by_category(self, volunteers: List[Dict]) -> Dict[str, List[Dict]]:
         """
@@ -308,7 +318,7 @@ class CampaignManager:
             contact_info = self.volunteer_service.get_volunteer_contact_info(volunteer.get('id'))
             
             if not contact_info:
-                self.logger.warning(f"No contact info for volunteer {volunteer.get('id')}")
+                self.logger.warning("No contact info for selected volunteer")
                 return False
             
             # Send message through platform
@@ -327,13 +337,13 @@ class CampaignManager:
                 campaign = self.active_campaigns[campaign_id]
                 campaign['statistics']['messages_sent'] += 1
                 
-                self.logger.info(f"Sent message to volunteer {volunteer.get('name')}")
+                self.logger.info("Sent message to selected volunteer")
                 return True
             
             return False
             
-        except Exception as e:
-            self.logger.error(f"Error sending direct message: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, sqlite3.DatabaseError) as e:
+            self.logger.error("Error sending direct message: %s", type(e).__name__)
             return False
     
     async def _post_strategic_request(self, campaign_id: str, category: str, 
@@ -367,8 +377,8 @@ class CampaignManager:
             
             return False
             
-        except Exception as e:
-            self.logger.error(f"Error posting strategic request: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, sqlite3.DatabaseError) as e:
+            self.logger.error("Error posting strategic request: %s", type(e).__name__)
             return False
     
     def _personalize_message(self, message_template: CampaignMessage, volunteer: Dict) -> Dict:
@@ -433,51 +443,21 @@ class CampaignManager:
     
     async def _send_platform_message(self, contact_info: Dict, message: Dict) -> bool:
         """
-        Send message through NLvoorElkaar platform
+        Refuse legacy platform sends outside the outreach approval ledger.
         """
-        try:
-            # Implementation would use the volunteer service to send actual messages
-            # This is a placeholder for the actual messaging implementation
-            
-            # Simulate message sending with rate limiting
-            await asyncio.sleep(1)
-            
-            # In real implementation, this would:
-            # 1. Navigate to volunteer profile
-            # 2. Click message button
-            # 3. Fill message form
-            # 4. Send message
-            # 5. Confirm delivery
-            
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error sending platform message: {str(e)}")
-            return False
+        raise RuntimeError(
+            "CampaignManager platform sending is disabled. Use OutreachLedger.send_approved_drafts "
+            "so every external message has approval, send evidence, and audit history."
+        )
     
     async def _post_platform_request(self, request_data: Dict) -> bool:
         """
-        Post request through NLvoorElkaar platform
+        Refuse legacy request posting outside the outreach approval ledger.
         """
-        try:
-            # Implementation would use the volunteer service to post actual requests
-            # This is a placeholder for the actual request posting implementation
-            
-            # Simulate request posting with rate limiting
-            await asyncio.sleep(5)
-            
-            # In real implementation, this would:
-            # 1. Navigate to request posting page
-            # 2. Fill request form
-            # 3. Submit request
-            # 4. Monitor for responses
-            # 5. Extract responding volunteer information
-            
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error posting platform request: {str(e)}")
-            return False
+        raise RuntimeError(
+            "CampaignManager request posting is disabled. Create reviewed outreach work through "
+            "the operating ledger before any external platform action."
+        )
     
     def get_campaign_status(self, campaign_id: str) -> Optional[Dict]:
         """
@@ -495,8 +475,8 @@ class CampaignManager:
             
             return campaign
             
-        except Exception as e:
-            self.logger.error(f"Error getting campaign status: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, sqlite3.DatabaseError) as e:
+            self.logger.error("Error getting campaign status: %s", type(e).__name__)
             return None
     
     def pause_campaign(self, campaign_id: str) -> bool:
@@ -517,8 +497,8 @@ class CampaignManager:
             self.logger.info(f"Paused campaign {campaign_id}")
             return True
             
-        except Exception as e:
-            self.logger.error(f"Error pausing campaign: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, sqlite3.DatabaseError) as e:
+            self.logger.error("Error pausing campaign: %s", type(e).__name__)
             return False
     
     def resume_campaign(self, campaign_id: str) -> bool:
@@ -539,8 +519,8 @@ class CampaignManager:
             # Restart campaign execution
             return self.start_campaign(campaign_id)
             
-        except Exception as e:
-            self.logger.error(f"Error resuming campaign: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, sqlite3.DatabaseError) as e:
+            self.logger.error("Error resuming campaign: %s", type(e).__name__)
             return False
     
     def get_all_campaigns(self) -> List[Dict]:
@@ -557,8 +537,8 @@ class CampaignManager:
                 
             return campaigns
             
-        except Exception as e:
-            self.logger.error(f"Error getting all campaigns: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, sqlite3.DatabaseError) as e:
+            self.logger.error("Error getting all campaigns: %s", type(e).__name__)
             return []
     
     def get_comprehensive_statistics(self) -> Dict:
@@ -601,6 +581,6 @@ class CampaignManager:
             
             return stats
             
-        except Exception as e:
-            self.logger.error(f"Error getting comprehensive statistics: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, sqlite3.DatabaseError) as e:
+            self.logger.error("Error getting comprehensive statistics: %s", type(e).__name__)
             return {}

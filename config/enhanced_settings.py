@@ -164,7 +164,7 @@ class ConfigManager:
                 with open(config_path, 'r') as f:
                     self._config_data = json.load(f)
                 logger.info(f"Configuration loaded from {config_path}")
-            except Exception as e:
+            except (FileNotFoundError, json.JSONDecodeError, OSError) as e:
                 logger.warning(f"Error loading config file: {e}")
                 self._config_data = {}
         
@@ -232,7 +232,7 @@ class ConfigManager:
                 json.dump(self._config_data, f, indent=2)
             logger.info(f"Configuration saved to {config_path}")
             return True
-        except Exception as e:
+        except (OSError, TypeError, ValueError) as e:
             logger.error(f"Error saving config: {e}")
             return False
 

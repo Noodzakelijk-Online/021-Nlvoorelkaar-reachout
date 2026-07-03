@@ -12,10 +12,17 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 from enum import Enum
 import hashlib
+import sqlite3
 
 from .volunteer_data_service import VolunteerDataService
-from ..database.database_manager import DatabaseManager
-from ..utils.backup_manager import BackupManager
+try:
+    from database.database_manager import DatabaseManager
+except ImportError:
+    from ..database.database_manager import DatabaseManager
+try:
+    from utils.backup_manager import BackupManager
+except ImportError:
+    from ..utils.backup_manager import BackupManager
 
 class ChangeType(Enum):
     NEW_VOLUNTEER = "new_volunteer"
@@ -151,8 +158,8 @@ class SyncService:
             
             return report
             
-        except Exception as e:
-            self.logger.error(f"Daily sync failed: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, sqlite3.DatabaseError, OSError) as e:
+            self.logger.error("Daily sync failed: %s", type(e).__name__)
             
             # Create error report
             report = SyncReport(
@@ -165,7 +172,7 @@ class SyncService:
                 changes_detected=[],
                 sync_duration=(datetime.now() - sync_start_time).total_seconds(),
                 success=False,
-                errors=[str(e)]
+                errors=[type(e).__name__]
             )
             
             return report
@@ -196,8 +203,8 @@ class SyncService:
             self.logger.info(f"Fetched {fresh_data['total_count']} volunteers from platform")
             return fresh_data
             
-        except Exception as e:
-            self.logger.error(f"Error fetching fresh volunteer data: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, KeyError, sqlite3.DatabaseError, OSError) as e:
+            self.logger.error("Error fetching fresh volunteer data: %s", type(e).__name__)
             raise
     
     async def _detect_changes(self, current_volunteers: List[Dict], 
@@ -263,8 +270,8 @@ class SyncService:
             self.logger.info(f"Detected {len(changes)} changes in volunteer database")
             return changes
             
-        except Exception as e:
-            self.logger.error(f"Error detecting changes: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, sqlite3.DatabaseError) as e:
+            self.logger.error("Error detecting changes: %s", type(e).__name__)
             raise
     
     def _detect_field_changes(self, old_data: Dict, new_data: Dict) -> List[str]:
@@ -326,8 +333,8 @@ class SyncService:
             # If we can't get contact info, the volunteer might be removed
             return contact_info is None
             
-        except Exception as e:
-            self.logger.warning(f"Could not verify volunteer removal: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, sqlite3.DatabaseError) as e:
+            self.logger.warning("Could not verify volunteer removal: %s", type(e).__name__)
             return False  # Conservative approach - don't remove if we can't verify
     
     async def _apply_changes(self, changes: List[VolunteerChange]):
@@ -340,23 +347,23 @@ class SyncService:
             for change in changes:
                 if change.change_type == ChangeType.NEW_VOLUNTEER:
                     self.db_manager.add_volunteer(change.new_data)
-                    self.logger.info(f"Added new volunteer: {change.new_data.get('name')}")
+                    self.logger.info("Added new volunteer record")
                 
                 elif change.change_type == ChangeType.REMOVED_VOLUNTEER:
                     self.db_manager.remove_volunteer(change.volunteer_id)
-                    self.logger.info(f"Removed volunteer: {change.old_data.get('name')}")
+                    self.logger.info("Removed volunteer record")
                 
                 elif change.change_type == ChangeType.UPDATED_VOLUNTEER:
                     self.db_manager.update_volunteer(change.volunteer_id, change.new_data)
-                    self.logger.info(f"Updated volunteer: {change.new_data.get('name')} (fields: {', '.join(change.field_changes)})")
+                    self.logger.info("Updated volunteer record fields: %s", ', '.join(change.field_changes))
                 
                 # Record change in history
                 self.db_manager.record_volunteer_change(change)
             
             self.logger.info("Successfully applied all changes to database")
             
-        except Exception as e:
-            self.logger.error(f"Error applying changes: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, sqlite3.DatabaseError, OSError) as e:
+            self.logger.error("Error applying changes: %s", type(e).__name__)
             raise
     
     def _store_sync_report(self, report: SyncReport):
@@ -380,8 +387,8 @@ class SyncService:
             self.db_manager.store_sync_report(report_data)
             self.logger.info("Stored sync report in database")
             
-        except Exception as e:
-            self.logger.error(f"Error storing sync report: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, sqlite3.DatabaseError, OSError) as e:
+            self.logger.error("Error storing sync report: %s", type(e).__name__)
     
     def get_sync_status(self) -> Dict:
         """
@@ -410,8 +417,8 @@ class SyncService:
             
             return status
             
-        except Exception as e:
-            self.logger.error(f"Error getting sync status: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, sqlite3.DatabaseError) as e:
+            self.logger.error("Error getting sync status: %s", type(e).__name__)
             return {}
     
     def _calculate_next_sync_time(self) -> datetime:
@@ -455,8 +462,8 @@ class SyncService:
             
             return sorted(history, key=lambda x: x['sync_date'], reverse=True)
             
-        except Exception as e:
-            self.logger.error(f"Error getting sync history: {str(e)}")
+        except (AttributeError, ValueError, KeyError, TypeError, sqlite3.DatabaseError) as e:
+            self.logger.error("Error getting sync history: %s", type(e).__name__)
             return []
     
     def get_change_details(self, sync_date: str) -> List[Dict]:
@@ -481,8 +488,8 @@ class SyncService:
             
             return []
             
-        except Exception as e:
-            self.logger.error(f"Error getting change details: {str(e)}")
+        except (AttributeError, ValueError, KeyError, TypeError, sqlite3.DatabaseError) as e:
+            self.logger.error("Error getting change details: %s", type(e).__name__)
             return []
     
     async def force_sync(self) -> SyncReport:
@@ -491,13 +498,13 @@ class SyncService:
         """
         try:
             if self.sync_in_progress:
-                raise Exception("Synchronization already in progress")
+                raise RuntimeError("Synchronization already in progress")
             
             self.logger.info("Starting forced synchronization")
             return await self.perform_daily_sync()
             
-        except Exception as e:
-            self.logger.error(f"Forced sync failed: {str(e)}")
+        except (AttributeError, TypeError, RuntimeError, ValueError, KeyError) as e:
+            self.logger.error("Forced sync failed: %s", type(e).__name__)
             raise
     
     def get_volunteer_change_history(self, volunteer_id: str) -> List[Dict]:
@@ -506,8 +513,8 @@ class SyncService:
         """
         try:
             return self.db_manager.get_volunteer_change_history(volunteer_id)
-        except Exception as e:
-            self.logger.error(f"Error getting volunteer change history: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, sqlite3.DatabaseError) as e:
+            self.logger.error("Error getting volunteer change history: %s", type(e).__name__)
             return []
     
     def get_database_integrity_report(self) -> Dict:
@@ -563,6 +570,6 @@ class SyncService:
             
             return integrity_report
             
-        except Exception as e:
-            self.logger.error(f"Error generating integrity report: {str(e)}")
+        except (AttributeError, ValueError, TypeError, KeyError, sqlite3.DatabaseError, ZeroDivisionError) as e:
+            self.logger.error("Error generating integrity report: %s", type(e).__name__)
             return {}

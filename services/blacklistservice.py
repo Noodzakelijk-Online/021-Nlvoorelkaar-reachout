@@ -24,7 +24,7 @@ class BlacklistService:
 
         # Check if the user is already in the blacklist
         if  profile_id in  [row[0] for row in existing_blacklist]:
-            print(f"'{profile_id}' is already blacklisted.")
+            print("Profile is already blacklisted.")
             return
 
         # Add the new user to the blacklist
@@ -37,7 +37,7 @@ class BlacklistService:
             file_content.seek(0)
             self.google_drive_manager.upload_file_content(file_content.getvalue().encode('utf-8'), "blacklisted_volunteers.csv")
 
-        print(f"'{profile_id}' has been added to the blacklist.")
+        print("Profile has been added to the blacklist.")
 
     def get_blacklisted_users(self) -> [str]:
         # Find the file ID of the blacklisted_volunteers.csv file
@@ -84,7 +84,7 @@ class BlacklistService:
 
         # Check if the user is in the blacklist
         if profile_id not in [row[0] for row in existing_blacklist]:
-            print(f"'{profile_id}' is not currently blacklisted.")
+            print("Profile is not currently blacklisted.")
             return
 
         # Filter out the user from the blacklist
@@ -98,6 +98,6 @@ class BlacklistService:
             self.google_drive_manager.upload_file_content(file_content.getvalue().encode('utf-8'),
                                                           "blacklisted_volunteers.csv")
 
-        print(f"'{profile_id}' has been removed from the blacklist.")
+        print("Profile has been removed from the blacklist.")
 
 

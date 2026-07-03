@@ -218,8 +218,8 @@ class AsyncTaskManager:
                 self.running_tasks[task_id] = thread
                 thread.start()
                 
-            except Exception as e:
-                logger.error(f"Error in task processor: {e}")
+            except (AttributeError, KeyError, RuntimeError, TypeError, queue.Empty) as e:
+                logger.error("Error in task processor: %s", type(e).__name__)
                 
     def _execute_task(self, task: Task):
         """Execute a single task"""
@@ -264,11 +264,11 @@ class AsyncTaskManager:
             task.completed_at = datetime.now()
             logger.info(f"Task completed: {task.name}")
             
-        except Exception as e:
+        except (AttributeError, TypeError, RuntimeError, asyncio.CancelledError, OSError) as e:
             task.error = e
             task.status = TaskStatus.FAILED
             task.completed_at = datetime.now()
-            logger.error(f"Task failed: {task.name} - {e}")
+            logger.error("Task failed: %s - %s", task.name, type(e).__name__)
             
         finally:
             # Remove from running tasks
@@ -282,24 +282,24 @@ class AsyncTaskManager:
             if task.callback:
                 try:
                     task.callback(task)
-                except Exception as e:
-                    logger.error(f"Error in task callback: {e}")
+                except (AttributeError, TypeError, RuntimeError) as e:
+                    logger.error("Error in task callback: %s", type(e).__name__)
                     
     def _notify_progress_callbacks(self, task: Task):
         """Notify progress callbacks"""
         for callback in self.progress_callbacks:
             try:
                 callback(task)
-            except Exception as e:
-                logger.error(f"Error in progress callback: {e}")
+            except (AttributeError, TypeError) as e:
+                logger.error("Error in progress callback: %s", type(e).__name__)
                 
     def _notify_completion_callbacks(self, task: Task):
         """Notify completion callbacks"""
         for callback in self.completion_callbacks:
             try:
                 callback(task)
-            except Exception as e:
-                logger.error(f"Error in completion callback: {e}")
+            except (AttributeError, TypeError) as e:
+                logger.error("Error in completion callback: %s", type(e).__name__)
                 
     def shutdown(self):
         """Shutdown the task manager"""
@@ -362,75 +362,17 @@ class TaskWrappers:
                 
             return volunteers
             
-        except Exception as e:
-            logger.error(f"Error in scrape_volunteers task: {e}")
+        except (AttributeError, TypeError, RuntimeError, ValueError, OSError) as e:
+            logger.error("Error in scrape_volunteers task: %s", type(e).__name__)
             raise
             
     @staticmethod
     def send_messages(scraper, message_data, progress_callback=None, cancellation_token=None):
-        """Wrapper for sending messages with progress tracking"""
-        try:
-            volunteers = message_data['volunteers']
-            message_template = message_data['message_template']
-            campaign_id = message_data.get('campaign_id')
-            
-            sent_count = 0
-            failed_count = 0
-            
-            for i, volunteer in enumerate(volunteers):
-                # Check for cancellation
-                if cancellation_token and cancellation_token.is_set():
-                    break
-                    
-                if progress_callback:
-                    progress_callback(
-                        i,
-                        len(volunteers),
-                        f"Sending message to {volunteer.get('name', 'volunteer')}..."
-                    )
-                    
-                try:
-                    # Personalize message
-                    personalized_message = message_template.replace(
-                        '{name}', volunteer.get('name', 'there')
-                    ).replace(
-                        '{location}', volunteer.get('location', 'your area')
-                    )
-                    
-                    # Send message
-                    success = scraper.send_message(
-                        volunteer['volunteer_id'],
-                        personalized_message
-                    )
-                    
-                    if success:
-                        sent_count += 1
-                    else:
-                        failed_count += 1
-                        
-                    # Delay between messages
-                    time.sleep(2)
-                    
-                except Exception as e:
-                    logger.error(f"Error sending message to {volunteer.get('volunteer_id')}: {e}")
-                    failed_count += 1
-                    
-            if progress_callback:
-                progress_callback(
-                    len(volunteers),
-                    len(volunteers),
-                    f"Completed: {sent_count} sent, {failed_count} failed"
-                )
-                
-            return {
-                'sent_count': sent_count,
-                'failed_count': failed_count,
-                'total_count': len(volunteers)
-            }
-            
-        except Exception as e:
-            logger.error(f"Error in send_messages task: {e}")
-            raise
+        """Refuse direct sending outside the outreach approval ledger."""
+        raise RuntimeError(
+            "Direct task-wrapper sending is disabled. Use OutreachLedger.send_approved_drafts "
+            "so every message has a reviewed draft, approval, send attempt, evidence, and audit trail."
+        )
             
     @staticmethod
     def backup_data(backup_manager, backup_name=None, progress_callback=None, cancellation_token=None):
@@ -458,9 +400,9 @@ class TaskWrappers:
                     progress_callback(100, 100, "Backup completed successfully")
                 return backup_path
             else:
-                raise Exception("Backup verification failed")
+                raise RuntimeError("Backup verification failed")
                 
-        except Exception as e:
-            logger.error(f"Error in backup_data task: {e}")
+        except (AttributeError, TypeError, RuntimeError, OSError) as e:
+            logger.error("Error in backup_data task: %s", type(e).__name__)
             raise
 

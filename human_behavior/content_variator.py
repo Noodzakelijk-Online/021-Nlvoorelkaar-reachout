@@ -509,7 +509,7 @@ class ContentVariator:
         t = Template(template)
         try:
             result = t.safe_substitute(vars_dict)
-        except Exception:
+        except (KeyError, ValueError, TypeError):
             result = template
         
         return result

@@ -5,6 +5,7 @@ import os
 import time
 
 from google.auth.transport.requests import Request
+from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
@@ -49,7 +50,7 @@ class GoogleDriveManager:
             try:
                 logger.info("Refreshing Google Drive token")
                 self.creds.refresh(Request())
-            except Exception as e:
+            except (RefreshError, OSError, RuntimeError, ValueError):
                 logger.warning("Failed to refresh Google Drive token: %s", e)
                 self.creds = None
 
@@ -97,7 +98,7 @@ class GoogleDriveManager:
                 except HttpError as error:
                     logger.error("Google Drive setup failed for %s: %s", file, error)
 
-        except Exception as e:
+        except (HttpError, OSError, ValueError, RuntimeError, RefreshError, KeyError) as e:
             logger.error("Google Drive setup failed: %s", e)
 
     def get_new_credentials(self):

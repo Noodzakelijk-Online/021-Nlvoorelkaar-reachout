@@ -1,4 +1,5 @@
 import logging
+from requests import exceptions as request_exceptions
 
 from config.settings import headers
 from models.sessionmanager import SessionManager
@@ -18,8 +19,8 @@ class VolunteerService:
             soup = BeautifulSoup(response.text, "html.parser")
             key = soup.find('input', {'name': 'key'})['value']
             url = f"{url}&key={key}"
-        except Exception as e:
-            logging.error(f'Error while getting volunteers: {e.__str__()}')
+        except (request_exceptions.RequestException, AttributeError, KeyError, TypeError) as e:
+            logging.error('Error while getting volunteers: %s', type(e).__name__)
             return []
 
         while True:
@@ -47,8 +48,8 @@ class VolunteerService:
                 else:
                     notifier.notify_progresse_get_volunteers(current_page)
                     break
-            except Exception as e:
-                logging.error(f'Error while getting volunteers: {e.__str__()}')
+            except (request_exceptions.RequestException, AttributeError, KeyError, TypeError) as e:
+                logging.error('Error while getting volunteers: %s', type(e).__name__)
                 return []
         return volunteers_ids
 

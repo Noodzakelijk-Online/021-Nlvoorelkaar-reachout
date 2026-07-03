@@ -12,7 +12,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, Tuple
 from dataclasses import dataclass, asdict
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import re
@@ -258,9 +258,9 @@ class SecureCredentialManager:
             logger.info("Credentials stored successfully")
             return True, "Inloggegevens succesvol opgeslagen"
             
-        except Exception as e:
-            logger.error(f"Error storing credentials: {e}")
-            return False, f"Fout bij opslaan inloggegevens: {str(e)}"
+        except (TypeError, ValueError, OSError, json.JSONDecodeError, InvalidToken) as e:
+            logger.error("Error storing credentials: %s", type(e).__name__)
+            return False, "Fout bij opslaan inloggegevens."
 
     def store_credential(self, service: str, key: str, value: str) -> None:
         """Backward-compatible single-value credential storage."""
@@ -295,8 +295,8 @@ class SecureCredentialManager:
                 password = keyring.get_password(KEYRING_SERVICE, 'password')
                 return email, password
                 
-        except Exception as e:
-            logger.error(f"Error retrieving credentials: {e}")
+        except (OSError, json.JSONDecodeError, TypeError, ValueError, InvalidToken) as e:
+            logger.error("Error retrieving credentials: %s", type(e).__name__)
             return None, None
     
     def rotate_credentials(
@@ -391,7 +391,7 @@ class SecureCredentialManager:
             else:
                 return False, f"Inloggegevens geldig tot {expires_at.strftime('%d-%m-%Y')}"
                 
-        except Exception as e:
+        except (TypeError, ValueError) as e:
             logger.error(f"Error checking rotation: {e}")
             return True, "Kan vervaldatum niet controleren, rotatie aanbevolen"
     
@@ -422,9 +422,9 @@ class SecureCredentialManager:
             logger.info("Credentials deleted successfully")
             return True, "Inloggegevens succesvol verwijderd"
             
-        except Exception as e:
-            logger.error(f"Error deleting credentials: {e}")
-            return False, f"Fout bij verwijderen inloggegevens: {str(e)}"
+        except OSError as e:
+            logger.error("Error deleting credentials: %s", type(e).__name__)
+            return False, "Fout bij verwijderen inloggegevens."
     
     def get_credential_status(self) -> Dict[str, Any]:
         """
@@ -457,7 +457,7 @@ class SecureCredentialManager:
                 with open(self._metadata_file, 'r') as f:
                     data = json.load(f)
                 return CredentialMetadata.from_dict(data)
-            except Exception as e:
+            except (json.JSONDecodeError, OSError, TypeError, ValueError) as e:
                 logger.warning(f"Error loading metadata: {e}")
         
         return CredentialMetadata()
@@ -468,7 +468,7 @@ class SecureCredentialManager:
             with open(self._metadata_file, 'w') as f:
                 json.dump(metadata.to_dict(), f, indent=2)
             os.chmod(self._metadata_file, 0o600)
-        except Exception as e:
+        except (TypeError, ValueError, OSError) as e:
             logger.error(f"Error saving metadata: {e}")
 
     def _load_credential_bundle(self) -> Dict[str, Dict[str, str]]:

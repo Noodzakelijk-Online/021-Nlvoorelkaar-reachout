@@ -1,11 +1,10 @@
-import time
-
-import requests
+import logging
 from bs4 import BeautifulSoup
-from cffi.cffi_opcode import PRIM_FLOAT
 
 from config.settings import headers
 from models.sessionmanager import SessionManager
+
+logger = logging.getLogger(__name__)
 
 def get_profile_id(offer_url):
     response = SessionManager.get_session().get(offer_url, headers=headers)
@@ -30,38 +29,36 @@ def get_profile_id(offer_url):
                     href = a_tag.get('href')
 
                     id = href.strip("/").split("/")[1]
-                    print(f'Found profile_id: {href}')
+                    logger.info('Extracted profile id from offer page')
                     return id
                 else:
-                    print("No <a> tag found inside the meta div.")
+                    logger.warning("No profile link found inside offer metadata")
             else:
-                print("No div with class 'meta' found inside the target div.")
+                logger.warning("No metadata block found on offer page")
         else:
-            print("No div with class 'block block--small block--square text--center first' found.")
+            logger.warning("No profile metadata container found on offer page")
     else:
-        print(f"Failed to retrieve the webpage. Status code: {response.status_code}")
+        logger.warning("Failed to retrieve offer page: status %s", response.status_code)
 
 
 def get_offer_url_from_chat_page(chat_url):
     response = SessionManager.get_session().get(chat_url, headers=headers)
-    print("Checking offer url from chat url", chat_url)
     if response.status_code == 200:
         soup = BeautifulSoup(response.content, 'html.parser')
 
         offer_dd = soup.select_one('#content > div.site-retain.react-dashboard-menu > div > div.col-span-9 > dl > dd:nth-child(4) > a')
-        print(offer_dd)
         if offer_dd:
             if 'href' in offer_dd.attrs:
                 offer_url = offer_dd['href'].strip()
 
                 return f"https://www.nlvoorelkaar.nl{offer_url}"
             else:
-                print("No <a> tag found or no href attribute.")
+                logger.warning("Offer link found without href")
                 return None
         else:
-            print("Offer <dd> element not found.")
+            logger.warning("Offer link not found on chat page")
             return None
     else:
-        print(f"Error: Received status code {response.status_code}")
+        logger.warning("Failed to retrieve chat page: status %s", response.status_code)
         return None
 

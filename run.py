@@ -112,7 +112,7 @@ def main():
         print("Please ensure all files are present and try again")
         input("Press Enter to exit...")
         sys.exit(1)
-    except Exception as e:
+    except (RuntimeError, TypeError, ValueError, OSError) as e:
         print(f"❌ Unexpected error: {e}")
         logging.exception("Application error")
         input("Press Enter to exit...")

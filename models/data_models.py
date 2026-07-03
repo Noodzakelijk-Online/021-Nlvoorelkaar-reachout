@@ -40,8 +40,15 @@ class Volunteer:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Volunteer':
         """Create from dictionary"""
+        volunteer_id = (
+            data.get('volunteer_id')
+            or data.get('id')
+            or data.get('profile_id')
+            or data.get('profile_url')
+            or ''
+        )
         return cls(
-            volunteer_id=data.get('volunteer_id', ''),
+            volunteer_id=str(volunteer_id),
             name=data.get('name', ''),
             description=data.get('description', ''),
             location=data.get('location', ''),

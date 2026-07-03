@@ -1,14 +1,11 @@
-import csv
-from random import randint
-from googleapiclient.errors import HttpError
-
-from google_drive.google_api_services import GoogleDriveManager
-import time
-from datetime import datetime, date
-from dateutil.relativedelta import relativedelta
+try:
+    from google_drive.google_api_services import GoogleDriveManager
+except ModuleNotFoundError:
+    GoogleDriveManager = None
+from datetime import datetime
 from typing import Optional
-import io
 import logging
+import requests
 
 from config.settings import headers
 from controllers.logincontroller import LoginController
@@ -17,60 +14,33 @@ from models.sessionmanager import SessionManager
 from bs4 import BeautifulSoup, PageElement
 
 from models.stringlist import StringLists
-from services.blacklistservice import BlacklistService
-from utils.profile_id_extractor import get_profile_id, get_offer_url_from_chat_page
+try:
+    from services.blacklistservice import BlacklistService
+except ModuleNotFoundError:
+    BlacklistService = None
+
+
+REMINDER_APPROVAL_ERROR = (
+    "Legacy reminder sending is disabled. Use OutreachLedger follow-up plans, "
+    "approval, and send evidence so every reminder is reviewed and auditable."
+)
 
 
 class ReminderService:
     def __init__(self, loginController: Optional[LoginControllerInterface] = None):
-        self.blService = BlacklistService()
+        self.blService = BlacklistService() if BlacklistService else None
         self.message = None
         self.username = None
         self.password = None
         self.notifier = None
         self.stopped = False
         self.loginController = loginController if loginController else LoginController()
-        self.google_drive_manager = GoogleDriveManager()
+        self.google_drive_manager = GoogleDriveManager() if GoogleDriveManager else None
 
     def run_reminder_service(self, reminder_frequency: Optional[str] = None,
                              reminder_message: Optional[str] = None):
-
-        DEFAULT_FREQUENCY = 3
-        DEFAULT_MESSAGE = f'''
-                                Hello,
-                                
-                                Were you able to check my request and if so, could you tell me if you are interested?
-                                I am looking forward to your response,
-                                
-                          '''
-
-        reminder_frequency, reminder_message = (
-            reminder_frequency or None,
-            reminder_message or None,
-        )
-
-        if not reminder_frequency or not reminder_message:
-            stored_frequency, stored_message = self.google_drive_manager.read_frequency_data()
-            reminder_frequency = reminder_frequency or stored_frequency or DEFAULT_FREQUENCY
-            reminder_message = reminder_message or stored_message or DEFAULT_MESSAGE
-
-        if reminder_frequency and reminder_message:
-            self.google_drive_manager.write_frequency_data(reminder_frequency, reminder_message)
-
-        print('Reminder frequency: ', reminder_frequency)
-        print('Reminder message: ', reminder_message)
-
-        chats_with_no_response = self.get_unanswered_chats(reminder_frequency)
-        print("Chats with no response:", chats_with_no_response)
-
-        if not reminder_frequency:
-            reminder_frequency = 3
-
-        if chats_with_no_response:
-            self.csv_handler(chats_with_no_response, reminder_frequency, reminder_message)
-
-
-        self.stop_reminder_service()
+        """Refuse the legacy reminder workflow; follow-ups must use the ledger."""
+        raise RuntimeError(REMINDER_APPROVAL_ERROR)
 
 
     def get_all_contacted_names(self) -> StringLists | bool:
@@ -162,118 +132,19 @@ class ReminderService:
 
     def send_reminder(self, chat_url: str, message: Optional[str] = None):
         """
-                Send a reminder to the receiver of the chat
+                Refuse legacy direct reminder sending.
 
                 param: chat_url: string url of the chat
                 param: message: string message to be sent
 
-                return: bool: True if the message was sent successfully, False otherwise
+                raises: RuntimeError because follow-ups require ledger approval
             """
-
-        profile_url = get_offer_url_from_chat_page(chat_url)
-        profile_id = get_profile_id(profile_url)
-
-        if self.blService.check_if_was_blacklisted(profile_id) or not profile_id:
-            print(f"Volunteer with id {profile_id} was blacklisted")
-            return
-
-        try:
-            response = SessionManager.get_session().get(chat_url, headers=headers)
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.text, 'html.parser')
-                message_token = soup.find('input', {'name': 'message[_token]'})['value']
-                message_loaded = soup.find('input', {'name': 'message[loaded]'})['value']
-
-                data = {
-                    'message[body]': message,
-                    'message[dusdat]': '',
-                    'message[_token]': message_token,
-                    'message[loaded]': message_loaded
-                }
-
-                time.sleep(randint(45, 75))
-                response = SessionManager.get_session().post(chat_url, data=data, headers=headers)
-
-                if response.status_code == 200:
-                    print(f'Reminder sent to {chat_url}', "Text: ", message)
-
-
-        except Exception as e:
-            logging.error(f'Error while sending reminder to chat with url {chat_url}: {str(e)}')
+        raise RuntimeError(REMINDER_APPROVAL_ERROR)
 
 
     def csv_handler(self, chats_with_no_response, reminder_frequency: int, reminder_message: Optional[str] = None):
-        if len(chats_with_no_response)<1:
-            print("No chats with no response")
-            return
-
-        file_id = self.google_drive_manager.find_file_id_by_name("chats_no_response.csv")
-        if file_id:
-            try:
-                file_content = self.google_drive_manager.download_file_content(file_id)
-            except HttpError as error:
-                print(f"An error occurred while downloading the file: {error}")
-                return
-        else:
-            file_content = None
-
-        # Read the CSV content
-        rows_in_file = []
-        if file_content:
-            file_stream = io.StringIO(file_content.decode('utf-8'))
-            reader = csv.reader(file_stream)
-            rows_in_file = list(reader)
-
-        updated_rows = []
-        today = date.today()
-        six_months_ago = today - relativedelta(months=6)
-
-        for chat_url in chats_with_no_response:
-            chat_exists = False
-            for i, row in enumerate(rows_in_file):
-                if len(row) > 0 and row[0] == chat_url:
-                    chat_exists = True
-                    last_contact_date = datetime.strptime(row[1], '%Y-%m-%d').date()
-                    if self.check_with_frequency(row[1], reminder_frequency) and int(row[2]) < 4:
-                        rows_in_file[i] = [chat_url, datetime.now().strftime('%Y-%m-%d'), str(int(row[2]) + 1)]
-                        reminder_msg = reminder_message if reminder_message else self.construct_message(chat_url)
-                        self.send_reminder(chat_url, reminder_msg)
-
-                    elif self.check_with_frequency(row[1], reminder_frequency) and int(
-                            row[2]) == 4 and not last_contact_date <= six_months_ago:
-                        print(f"Chat {chat_url} has been banned to send more reminders")
-                    elif not self.check_with_frequency(row[1], reminder_frequency):
-                        print(f"Message is not older than {reminder_frequency} days for {chat_url}")
-                    elif last_contact_date <= six_months_ago and int(row[2]) == 4:
-                        rows_in_file[i] = [chat_url, datetime.now().strftime('%Y-%m-%d'), str(5)]
-                        new_row = [chat_url, datetime.now().strftime('%Y-%m-%d'), '0']
-                        updated_rows.append(new_row)
-                        reminder_msg = reminder_message if reminder_message else self.construct_message(chat_url)
-                        self.send_reminder(chat_url, reminder_msg)
-                        print(f"New help request after 12 months for {chat_url}")
-
-            if not chat_exists:
-                new_row = [chat_url, datetime.now().strftime('%Y-%m-%d'), '0']
-                updated_rows.append(new_row)
-                reminder_msg = reminder_message if reminder_message else self.construct_message(chat_url)
-                self.send_reminder(chat_url, reminder_msg)
-                print(f"Sent message to {chat_url}")
-
-        # Combine updated rows with existing ones, removing duplicates
-        unique_rows = {tuple(row) for row in updated_rows + rows_in_file}
-
-        # Write the updated CSV content to a string buffer
-        output = io.StringIO()
-        writer = csv.writer(output)
-        writer.writerows(unique_rows)
-        output.seek(0)
-
-        # Upload the updated file to Google Drive
-        try:
-            self.google_drive_manager.upload_file_content(output.getvalue().encode('utf-8'),
-                                                          "chats_no_response.csv")
-        except HttpError as error:
-            print(f"An error occurred while uploading the file: {error}")
+        """Refuse legacy CSV-driven reminder sending."""
+        raise RuntimeError(REMINDER_APPROVAL_ERROR)
 
     def construct_message(self, chat_url: str) -> str:
         """
@@ -340,8 +211,8 @@ class ReminderService:
                 else:
                     logging.error(f'Error while checking unanswered messages: Could not get messages page')
                     return False
-        except Exception as e:
-            print(f'Error while checking unanswered messages: {str(e)}')
+        except (AttributeError, TypeError, IndexError, KeyError, requests.exceptions.RequestException, ValueError) as e:
+            logging.error('Error while checking unanswered messages: %s', type(e).__name__)
             return False
         return chats_with_no_response
 
@@ -358,8 +229,8 @@ class ReminderService:
                 soup = BeautifulSoup(response.text, 'html.parser')
                 name = soup.find('input', {'id': 'user_profile_firstName'})['value']
                 return name
-        except Exception as e:
-            logging.error(f'Error while getting sender name: {str(e)}')
+        except (AttributeError, TypeError, KeyError, requests.exceptions.RequestException, ValueError) as e:
+            logging.error('Error while getting sender name: %s', type(e).__name__)
             return False
 
     def get_receiver_name(self, chat_url: str):
@@ -383,8 +254,8 @@ class ReminderService:
                         'class': 'list__definition list__definition--horizontal list__definition--plain list-definition--small'}).text.split(
                         '\n')[2].strip()
                     return receiver_name
-            except Exception as e:
-                logging.error(f'Error while getting receiver name: {str(e)}')
+            except (AttributeError, TypeError, IndexError, ValueError) as e:
+                logging.error('Error while getting receiver name: %s', type(e).__name__)
                 return False
 
     def check_last_message_date(self, message_metas, reminder_frequency: int):
@@ -407,8 +278,8 @@ class ReminderService:
             delta = today - last_message_date
 
             return delta.days >= reminder_frequency
-        except Exception as e:
-            print(f'Error while checking last message date: {str(e)}')
+        except (AttributeError, TypeError, IndexError, ValueError) as e:
+            logging.error('Error while checking last message date: %s', type(e).__name__)
             return False
 
     def check_60_days(self, message_meta: PageElement):
@@ -428,8 +299,8 @@ class ReminderService:
             delta = today - last_message_date
 
             return delta.days >= 60
-        except Exception as e:
-            print(f'Error while checking last message date: {str(e)}')
+        except (AttributeError, TypeError, IndexError, ValueError) as e:
+            logging.error('Error while checking last message date: %s', type(e).__name__)
             return False
 
     def stop_reminder_service(self):

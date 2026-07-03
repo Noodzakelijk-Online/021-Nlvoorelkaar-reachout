@@ -181,7 +181,7 @@ class ConnectionPool:
                 cursor = conn.executemany(query, params_list)
                 conn.execute('COMMIT')
                 affected = cursor.rowcount
-            except Exception as e:
+            except sqlite3.DatabaseError as e:
                 conn.execute('ROLLBACK')
                 raise
         
@@ -260,7 +260,7 @@ class IndexManager:
             try:
                 success = self.create_index(index_name, table, columns)
                 results[index_name] = success
-            except Exception as e:
+            except (sqlite3.OperationalError, RuntimeError, ValueError) as e:
                 logger.error(f"Failed to create index {index_name}: {e}")
                 results[index_name] = False
         
@@ -296,7 +296,7 @@ class IndexManager:
         try:
             self.pool.execute(f'DROP INDEX IF EXISTS {index_name}', fetch=False)
             return True
-        except Exception as e:
+        except sqlite3.DatabaseError as e:
             logger.error(f"Error dropping index {index_name}: {e}")
             return False
     
@@ -330,7 +330,7 @@ class IndexManager:
                 'table': table,
                 'row_count': count
             }
-        except Exception as e:
+        except (sqlite3.DatabaseError, TypeError, ValueError) as e:
             return {'table': table, 'error': str(e)}
 
 

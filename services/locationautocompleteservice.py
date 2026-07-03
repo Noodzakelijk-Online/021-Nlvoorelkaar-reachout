@@ -1,5 +1,6 @@
 import json
 import logging
+import requests
 
 from config.settings import url_autocomplete, headers
 from models.sessionmanager import SessionManager
@@ -13,7 +14,7 @@ class LocationAutocompleteService:
             url = url_autocomplete + location
             response = SessionManager.get_session().get(url, headers=headers)
             data = json.loads(response.text)
-        except Exception as e:
-            logging.error(f'Error in get_location_autocomplete: {e}')
+        except (TypeError, requests.exceptions.RequestException, json.JSONDecodeError, KeyError, AttributeError) as e:
+            logging.error('Error in get_location_autocomplete: %s', type(e).__name__)
             data = []
         return data

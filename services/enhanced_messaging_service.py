@@ -414,8 +414,11 @@ class MessageScheduler:
             conn.commit()
     
     def set_send_callback(self, callback: Callable[[ScheduledMessage], bool]) -> None:
-        """Set the callback for sending messages"""
-        self._send_callback = callback
+        """Refuse legacy callback-based sending outside the outreach ledger."""
+        raise RuntimeError(
+            "Scheduled message callback sending is disabled. Use OutreachLedger.send_approved_drafts "
+            "or approved follow-up confirmation so delivery has approval, evidence, and audit history."
+        )
     
     def schedule_message(
         self,
@@ -599,6 +602,12 @@ class MessageScheduler:
         error_message: Optional[str] = None
     ) -> None:
         """Update message status"""
+        if status == 'sent':
+            raise RuntimeError(
+                "Scheduled messages cannot be marked sent directly. Use the outreach ledger "
+                "so delivery state has approval, evidence, and audit history."
+            )
+
         with closing(sqlite3.connect(self.db_path)) as conn:
             if status == 'sent':
                 conn.execute(
@@ -618,18 +627,11 @@ class MessageScheduler:
             conn.commit()
     
     def start_scheduler(self, check_interval: int = 60) -> None:
-        """Start the scheduler background thread"""
-        if self._is_running:
-            return
-        
-        self._is_running = True
-        self._scheduler_thread = threading.Thread(
-            target=self._scheduler_loop,
-            args=(check_interval,),
-            daemon=True
+        """Refuse legacy scheduled sending outside the outreach ledger."""
+        raise RuntimeError(
+            "Scheduled message processing is disabled. Use the outreach ledger so every external "
+            "message has review, approval, evidence, and audit history."
         )
-        self._scheduler_thread.start()
-        logger.info("Message scheduler started")
     
     def stop_scheduler(self) -> None:
         """Stop the scheduler"""
@@ -657,13 +659,13 @@ class MessageScheduler:
                                 self.update_status(message.id, 'sent')
                             else:
                                 self.update_status(message.id, 'failed', 'Send callback returned False')
-                        except Exception as e:
-                            self.update_status(message.id, 'failed', str(e))
+                        except (AttributeError, TypeError, RuntimeError, sqlite3.DatabaseError) as e:
+                            self.update_status(message.id, 'failed', type(e).__name__)
                     else:
                         logger.warning("No send callback configured")
-                
-            except Exception as e:
-                logger.error(f"Scheduler error: {e}")
+
+            except (json.JSONDecodeError, KeyError, AttributeError, TypeError, sqlite3.DatabaseError, RuntimeError) as e:
+                logger.error("Scheduler error: %s", type(e).__name__)
             
             time.sleep(check_interval)
 
@@ -838,7 +840,10 @@ class EnhancedMessagingService:
         self.scheduler = MessageScheduler(self.db_path)
         self.preview = MessagePreview()
         if send_callback:
-            self.scheduler.set_send_callback(send_callback)
+            raise RuntimeError(
+                "EnhancedMessagingService send callbacks are disabled. Use OutreachLedger.send_approved_drafts "
+                "so every external message has approval, evidence, and audit history."
+            )
 
     def render_template(self, template: str, variables: Dict[str, str]) -> str:
         """Render an ad-hoc template string with variable substitution."""

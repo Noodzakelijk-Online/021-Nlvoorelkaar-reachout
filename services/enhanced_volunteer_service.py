@@ -467,8 +467,8 @@ class EnhancedVolunteerService:
         if self._progress_callback and self._current_progress:
             try:
                 self._progress_callback(self._current_progress)
-            except Exception as e:
-                logger.error(f"Error in progress callback: {e}")
+            except (AttributeError, TypeError, RuntimeError) as e:
+                logger.error("Error in progress callback: %s", type(e).__name__)
     
     def start_scraping(
         self,
@@ -544,7 +544,7 @@ class EnhancedVolunteerService:
             response = self._make_request(first_page_url)
             
             if not response:
-                raise Exception("Failed to fetch first page")
+                raise RuntimeError("Failed to fetch first page")
             
             soup = BeautifulSoup(response.text, 'html.parser')
             self._current_progress.total_pages = self._extract_total_pages(soup)
@@ -592,10 +592,10 @@ class EnhancedVolunteerService:
                 self._current_progress.status = ScrapeStatus.COMPLETED
                 self._current_progress.completed_at = datetime.now().isoformat()
             
-        except Exception as e:
-            logger.error(f"Scraping error: {e}")
+        except (AttributeError, TypeError, ValueError, requests.exceptions.RequestException, sqlite3.DatabaseError, RuntimeError) as e:
+            logger.error("Scraping error: %s", type(e).__name__)
             self._current_progress.status = ScrapeStatus.FAILED
-            self._current_progress.error_message = str(e)
+            self._current_progress.error_message = type(e).__name__
         
         finally:
             self._is_running = False
@@ -648,8 +648,8 @@ class EnhancedVolunteerService:
             )
             response.raise_for_status()
             return response
-        except Exception as e:
-            logger.error(f"Request failed: {e}")
+        except (requests.exceptions.RequestException, TypeError, ValueError, AttributeError) as e:
+            logger.error("Request failed: %s", type(e).__name__)
             return None
     
     def _extract_total_pages(self, soup: BeautifulSoup) -> int:
@@ -666,7 +666,7 @@ class EnhancedVolunteerService:
                         pass
                 if pages:
                     return max(pages)
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError) as e:
             logger.warning(f"Could not extract total pages: {e}")
         
         return 1
@@ -682,7 +682,7 @@ class EnhancedVolunteerService:
                 match = re.search(r'[\d.]+', count_text.replace('.', ''))
                 if match:
                     return int(match.group())
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError) as e:
             logger.warning(f"Could not extract total count: {e}")
         
         return 0
@@ -712,8 +712,8 @@ class EnhancedVolunteerService:
                     
                     self._current_progress.processed_volunteers += 1
                     
-            except Exception as e:
-                logger.error(f"Error processing volunteer card: {e}")
+            except (AttributeError, TypeError, ValueError, sqlite3.DatabaseError) as e:
+                logger.error("Error processing volunteer card: %s", type(e).__name__)
     
     def _extract_volunteer_data(self, card) -> Optional[Dict[str, Any]]:
         """Extract volunteer data from HTML card"""
@@ -747,8 +747,8 @@ class EnhancedVolunteerService:
             if data.get('profile_id'):
                 return data
             
-        except Exception as e:
-            logger.error(f"Error extracting volunteer data: {e}")
+        except (AttributeError, TypeError, KeyError) as e:
+            logger.error("Error extracting volunteer data: %s", type(e).__name__)
         
         return None
     

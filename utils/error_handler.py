@@ -194,7 +194,7 @@ class ErrorHandler:
         for callback in self._error_callbacks:
             try:
                 callback(error)
-            except Exception as e:
+            except (AttributeError, RuntimeError, TypeError, ValueError) as e:
                 logger.error(f"Error in error callback: {e}")
     
     def register_callback(self, callback: Callable[[AppError], None]) -> None:
@@ -299,7 +299,7 @@ def handle_errors(
         def wrapper(*args, **kwargs):
             try:
                 return func(*args, **kwargs)
-            except Exception as e:
+            except (AppError, AttributeError, RuntimeError, TypeError, ValueError, OSError) as e:
                 handler = ErrorHandler()
                 app_error = handler.handle_error(
                     error=e,
@@ -337,7 +337,7 @@ def safe_execute(
     """
     try:
         return func(*args, **kwargs)
-    except Exception as e:
+    except (AppError, AttributeError, RuntimeError, TypeError, ValueError, OSError) as e:
         handler = ErrorHandler()
         handler.handle_error(
             error=e,

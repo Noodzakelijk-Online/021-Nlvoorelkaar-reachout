@@ -7,6 +7,7 @@ import sys
 import os
 import asyncio
 import logging
+import sqlite3
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -95,7 +96,7 @@ class EnhancedNLvoorElkaarTool:
             self.logger.info("Enhanced tool initialized successfully")
             return True
             
-        except Exception as e:
+        except (AttributeError, OSError, RuntimeError, TypeError, ValueError, sqlite3.DatabaseError) as e:
             self.logger.error(f"Initialization failed: {str(e)}")
             return False
     
@@ -125,7 +126,7 @@ class EnhancedNLvoorElkaarTool:
                 print("Failed to store credentials")
                 return False
                 
-        except Exception as e:
+        except (AttributeError, EOFError, KeyboardInterrupt, OSError, RuntimeError, TypeError) as e:
             self.logger.error(f"Credential setup failed: {str(e)}")
             return False
     
@@ -142,7 +143,7 @@ class EnhancedNLvoorElkaarTool:
         except KeyboardInterrupt:
             self.logger.info("Tool shutdown requested by user")
             self.shutdown()
-        except Exception as e:
+        except (AttributeError, RuntimeError, TypeError, ValueError, sqlite3.DatabaseError) as e:
             self.logger.error(f"Unexpected error: {str(e)}")
             self.shutdown()
     
@@ -190,7 +191,7 @@ class EnhancedNLvoorElkaarTool:
             
             return access_info
             
-        except Exception as e:
+        except (AttributeError, RuntimeError, TypeError, ValueError, sqlite3.DatabaseError) as e:
             self.logger.error(f"Error getting database access info: {str(e)}")
             return {}
     
@@ -228,7 +229,7 @@ class EnhancedNLvoorElkaarTool:
             self.logger.info(f"Created comprehensive campaign: {campaign_id}")
             return campaign_id
             
-        except Exception as e:
+        except (AttributeError, KeyError, RuntimeError, TypeError, ValueError, sqlite3.DatabaseError) as e:
             self.logger.error(f"Error creating comprehensive campaign: {str(e)}")
             return ""
     
@@ -246,7 +247,7 @@ class EnhancedNLvoorElkaarTool:
             
             return success
             
-        except Exception as e:
+        except (AttributeError, RuntimeError, TypeError, ValueError, sqlite3.DatabaseError) as e:
             self.logger.error(f"Error starting comprehensive campaign: {str(e)}")
             return False
     
@@ -291,7 +292,7 @@ class EnhancedNLvoorElkaarTool:
             
             return comprehensive_stats
             
-        except Exception as e:
+        except (AttributeError, RuntimeError, TypeError, ValueError, sqlite3.DatabaseError) as e:
             self.logger.error(f"Error getting comprehensive statistics: {str(e)}")
             return {}
     
@@ -354,7 +355,7 @@ class EnhancedNLvoorElkaarTool:
             self.logger.info(f"Exported volunteer database to {export_path}")
             return export_path
             
-        except Exception as e:
+        except (AttributeError, OSError, RuntimeError, TypeError, ValueError, KeyError, sqlite3.DatabaseError) as e:
             self.logger.error(f"Error exporting volunteer database: {str(e)}")
             return ""
     
@@ -382,7 +383,7 @@ class EnhancedNLvoorElkaarTool:
             
             self.logger.info("Enhanced tool shutdown complete")
             
-        except Exception as e:
+        except (AttributeError, OSError, RuntimeError, TypeError, ValueError, sqlite3.DatabaseError) as e:
             self.logger.error(f"Error during shutdown: {str(e)}")
 
 def main():

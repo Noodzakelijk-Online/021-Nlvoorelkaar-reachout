@@ -7,6 +7,7 @@ import sys
 import os
 import asyncio
 import logging
+import sqlite3
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -121,7 +122,7 @@ class EnhancedNLvoorElkaarSyncTool:
             self.logger.info("Enhanced sync tool initialized successfully")
             return True
             
-        except Exception as e:
+        except (AttributeError, OSError, RuntimeError, TypeError, ValueError, sqlite3.DatabaseError) as e:
             self.logger.error(f"Initialization failed: {str(e)}")
             return False
     
@@ -156,7 +157,7 @@ class EnhancedNLvoorElkaarSyncTool:
             
             self.logger.info("Synchronization services initialized")
             
-        except Exception as e:
+        except (AttributeError, OSError, RuntimeError, TypeError, ValueError, sqlite3.DatabaseError) as e:
             self.logger.error(f"Error initializing sync services: {str(e)}")
     
     async def _perform_daily_sync(self) -> bool:
@@ -180,7 +181,7 @@ class EnhancedNLvoorElkaarSyncTool:
                 self.logger.error("Daily sync failed")
                 return False
                 
-        except Exception as e:
+        except (AttributeError, KeyError, RuntimeError, TypeError, ValueError, sqlite3.DatabaseError) as e:
             self.logger.error(f"Daily sync error: {str(e)}")
             return False
     
@@ -201,7 +202,7 @@ class EnhancedNLvoorElkaarSyncTool:
             
             return True
             
-        except Exception as e:
+        except (AttributeError, RuntimeError, TypeError, ValueError, sqlite3.DatabaseError) as e:
             self.logger.error(f"Daily validation error: {str(e)}")
             return False
     
@@ -216,7 +217,7 @@ class EnhancedNLvoorElkaarSyncTool:
             self.logger.info("Weekly report generated successfully")
             return True
             
-        except Exception as e:
+        except (AttributeError, RuntimeError, TypeError, ValueError, sqlite3.DatabaseError) as e:
             self.logger.error(f"Weekly report error: {str(e)}")
             return False
     
@@ -246,7 +247,7 @@ class EnhancedNLvoorElkaarSyncTool:
                 print("Failed to store credentials")
                 return False
                 
-        except Exception as e:
+        except (AttributeError, EOFError, KeyboardInterrupt, OSError, RuntimeError, TypeError) as e:
             self.logger.error(f"Credential setup failed: {str(e)}")
             return False
     
@@ -266,7 +267,7 @@ class EnhancedNLvoorElkaarSyncTool:
         except KeyboardInterrupt:
             self.logger.info("Tool shutdown requested by user")
             self.shutdown()
-        except Exception as e:
+        except (AttributeError, RuntimeError, TypeError, ValueError, sqlite3.DatabaseError) as e:
             self.logger.error(f"Unexpected error: {str(e)}")
             self.shutdown()
     
@@ -334,7 +335,7 @@ class EnhancedNLvoorElkaarSyncTool:
                 }
             }
             
-        except Exception as e:
+        except (AttributeError, RuntimeError, TypeError, ValueError, sqlite3.DatabaseError) as e:
             self.logger.error(f"Error getting comprehensive status: {str(e)}")
             return {'error': str(e)}
     
@@ -352,7 +353,7 @@ class EnhancedNLvoorElkaarSyncTool:
                 'task_id': id(sync_task)
             }
             
-        except Exception as e:
+        except (AttributeError, RuntimeError, TypeError, ValueError, sqlite3.DatabaseError) as e:
             self.logger.error(f"Error forcing sync: {str(e)}")
             return {'error': str(e)}
     
@@ -371,7 +372,7 @@ class EnhancedNLvoorElkaarSyncTool:
                 'report_file': report_data.get('report_file', '')
             }
             
-        except Exception as e:
+        except (AttributeError, KeyError, RuntimeError, TypeError, ValueError, sqlite3.DatabaseError) as e:
             self.logger.error(f"Error forcing validation: {str(e)}")
             return {'error': str(e)}
     
@@ -379,7 +380,7 @@ class EnhancedNLvoorElkaarSyncTool:
         """Configure synchronization schedule"""
         try:
             return self.scheduler_service.update_task_schedule('daily_volunteer_sync', sync_time)
-        except Exception as e:
+        except (KeyError, RuntimeError, TypeError, ValueError) as e:
             self.logger.error(f"Error configuring sync schedule: {str(e)}")
             return False
     
@@ -391,7 +392,7 @@ class EnhancedNLvoorElkaarSyncTool:
                 smtp_server, smtp_port, username, password, from_address
             )
             return True
-        except Exception as e:
+        except (AttributeError, RuntimeError, TypeError, ValueError) as e:
             self.logger.error(f"Error configuring email: {str(e)}")
             return False
     
@@ -412,7 +413,7 @@ class EnhancedNLvoorElkaarSyncTool:
             
             return True
             
-        except Exception as e:
+        except (AttributeError, RuntimeError, TypeError, ValueError, sqlite3.DatabaseError) as e:
             self.logger.error(f"Error adding notification recipient: {str(e)}")
             return False
     
@@ -420,7 +421,7 @@ class EnhancedNLvoorElkaarSyncTool:
         """Get synchronization history"""
         try:
             return self.sync_service.get_sync_history(days)
-        except Exception as e:
+        except (AttributeError, RuntimeError, TypeError, ValueError, sqlite3.DatabaseError) as e:
             self.logger.error(f"Error getting sync history: {str(e)}")
             return []
     
@@ -428,7 +429,7 @@ class EnhancedNLvoorElkaarSyncTool:
         """Get validation history"""
         try:
             return self.validation_service.get_validation_history(days)
-        except Exception as e:
+        except (AttributeError, RuntimeError, TypeError, ValueError, sqlite3.DatabaseError) as e:
             self.logger.error(f"Error getting validation history: {str(e)}")
             return []
     
@@ -442,7 +443,7 @@ class EnhancedNLvoorElkaarSyncTool:
                 'database_performance': self.db_manager.get_comprehensive_statistics(),
                 'campaign_performance': self.campaign_manager.get_comprehensive_statistics()
             }
-        except Exception as e:
+        except (AttributeError, RuntimeError, TypeError, ValueError, sqlite3.DatabaseError) as e:
             self.logger.error(f"Error getting performance metrics: {str(e)}")
             return {}
     
@@ -474,7 +475,7 @@ class EnhancedNLvoorElkaarSyncTool:
             self.logger.info(f"Comprehensive data exported to {export_path}")
             return export_path
             
-        except Exception as e:
+        except (AttributeError, OSError, RuntimeError, TypeError, ValueError, KeyError, sqlite3.DatabaseError) as e:
             self.logger.error(f"Error exporting comprehensive data: {str(e)}")
             return ""
     
@@ -505,7 +506,7 @@ class EnhancedNLvoorElkaarSyncTool:
             
             self.logger.info("Enhanced sync tool shutdown complete")
             
-        except Exception as e:
+        except (AttributeError, OSError, RuntimeError, TypeError, ValueError, sqlite3.DatabaseError) as e:
             self.logger.error(f"Error during shutdown: {str(e)}")
 
 def main():

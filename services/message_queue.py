@@ -259,7 +259,7 @@ class MessageQueue:
             self._save_message(message)
             self._queue.put((message.priority.value, message))
         
-        logger.info(f"Message {message.id} enqueued for {recipient_id}")
+        logger.info("Message %s enqueued for ledger review", message.id)
         self._notify_status_change(message)
         
         return message.id
@@ -326,8 +326,11 @@ class MessageQueue:
             return [self._row_to_message(row) for row in cursor]
 
     def mark_sent(self, message_id: str) -> None:
-        """Compatibility helper: mark a message as sent."""
-        self.update_status(message_id, MessageStatus.SENT)
+        """Refuse unaudited sent marking outside the outreach ledger."""
+        raise RuntimeError(
+            "MessageQueue cannot mark messages as sent directly. Use OutreachLedger.confirm_manual_send "
+            "or OutreachLedger.send_approved_drafts so sent state has approval, evidence, and audit history."
+        )
     
     def update_status(
         self,
@@ -336,6 +339,12 @@ class MessageQueue:
         error_message: Optional[str] = None
     ) -> None:
         """Update message status"""
+        if status in {MessageStatus.SENT, MessageStatus.DELIVERED}:
+            raise RuntimeError(
+                "MessageQueue cannot set sent/delivered status directly. Use the outreach ledger "
+                "so delivery state has approval, evidence, and audit history."
+            )
+
         with closing(sqlite3.connect(self.db_path)) as conn:
             updates = {'status': status.value}
             
@@ -372,8 +381,11 @@ class MessageQueue:
         return False
     
     def set_send_callback(self, callback: Callable[[Message], bool]) -> None:
-        """Set the callback function for sending messages"""
-        self._send_callback = callback
+        """Refuse legacy callback-based sending outside the outreach ledger."""
+        raise RuntimeError(
+            "MessageQueue callback sending is disabled. Use OutreachLedger.send_approved_drafts "
+            "so every external message has approval, send evidence, and audit history."
+        )
     
     def add_status_callback(self, callback: Callable[[Message], None]) -> None:
         """Add a callback for status changes"""
@@ -384,21 +396,15 @@ class MessageQueue:
         for callback in self._status_callbacks:
             try:
                 callback(message)
-            except Exception as e:
-                logger.error(f"Error in status callback: {e}")
+            except (AttributeError, TypeError, RuntimeError, ValueError) as e:
+                logger.error("Error in status callback: %s", type(e).__name__)
     
     def start_processing(self) -> None:
-        """Start the message processing thread"""
-        if self._processing:
-            return
-        
-        self._processing = True
-        self._processor_thread = threading.Thread(
-            target=self._process_queue,
-            daemon=True
+        """Refuse legacy queue processing outside the outreach ledger."""
+        raise RuntimeError(
+            "MessageQueue processing is disabled. Use OutreachLedger.send_approved_drafts "
+            "so every external message has approval, send evidence, and audit history."
         )
-        self._processor_thread.start()
-        logger.info("Message queue processing started")
     
     def stop_processing(self) -> None:
         """Stop the message processing thread"""
@@ -432,29 +438,16 @@ class MessageQueue:
                 # Send the message
                 self._send_message(message)
                 
-            except Exception as e:
-                logger.error(f"Error processing queue: {e}")
+            except (AttributeError, TypeError, RuntimeError, ValueError, KeyError) as e:
+                logger.error("Error processing queue: %s", type(e).__name__)
                 time.sleep(1)
     
     def _send_message(self, message: Message) -> None:
-        """Send a single message"""
-        if not self._send_callback:
-            logger.error("No send callback configured")
-            return
-        
-        self.update_status(message.id, MessageStatus.SENDING)
-        
-        try:
-            success = self._send_callback(message)
-            
-            if success:
-                self.update_status(message.id, MessageStatus.SENT)
-                logger.info(f"Message {message.id} sent successfully")
-            else:
-                self._handle_send_failure(message, "Send callback returned False")
-                
-        except Exception as e:
-            self._handle_send_failure(message, str(e))
+        """Refuse legacy single-message sending outside the outreach ledger."""
+        raise RuntimeError(
+            "MessageQueue direct sending is disabled. Use OutreachLedger.send_approved_drafts "
+            "so every external message has approval, send evidence, and audit history."
+        )
     
     def _handle_send_failure(self, message: Message, error: str) -> None:
         """Handle message send failure"""

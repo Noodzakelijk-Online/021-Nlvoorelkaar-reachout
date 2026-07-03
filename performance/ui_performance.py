@@ -382,7 +382,7 @@ class LazyLoader:
         try:
             offset = page * self.page_size
             return self.fetch_func(offset, self.page_size)
-        except Exception as e:
+        except (TypeError, ValueError, OSError, RuntimeError) as e:
             logger.error(f"Error fetching page {page}: {e}")
             return []
     
@@ -544,7 +544,7 @@ class DebouncedSearch:
         self._last_query = query
         try:
             self.search_func(query)
-        except Exception as e:
+        except (TypeError, RuntimeError, ValueError) as e:
             logger.error(f"Search error: {e}")
     
     def cancel(self) -> None:
@@ -588,7 +588,7 @@ class UIUpdateBatcher:
         for update in updates:
             try:
                 update()
-            except Exception as e:
+            except (TypeError, RuntimeError, AttributeError) as e:
                 logger.error(f"UI update error: {e}")
 
 

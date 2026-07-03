@@ -1,11 +1,16 @@
 import csv
 import io
+import logging
 from datetime import date, datetime
 
 from dateutil.relativedelta import relativedelta
 
-from google_drive.google_api_services import GoogleDriveManager
+try:
+    from google_drive.google_api_services import GoogleDriveManager
+except ModuleNotFoundError:
+    GoogleDriveManager = object
 
+logger = logging.getLogger(__name__)
 
 
 def contact_date_to_csv(volunteer_id: str, drive_manager: GoogleDriveManager):
@@ -80,13 +85,13 @@ def pre_send_message_check(volunteer_id: str, drive_manager: GoogleDriveManager)
 
     if last_contact_date is None or last_contact_date <= six_months_ago:
         if not check_if_volunteer_id_is_banned(volunteer_id, drive_manager):
-            print(f"Sending message to volunteer with id {volunteer_id}")
+            logger.info("Pre-send check passed for volunteer")
             return True
         else:
-            print(f"Cannot send message to volunteer with id {volunteer_id}: Volunteer is banned")
+            logger.info("Pre-send check blocked volunteer because no-response limit is active")
             return False
     else:
-        print(f"Cannot send message to volunteer with id {volunteer_id}: Last contact date is {last_contact_date}")
+        logger.info("Pre-send check blocked volunteer because recent contact exists")
         return False
 
 def check_if_volunteer_id_is_banned(volunteer_id: str, drive_manager: GoogleDriveManager):
@@ -96,7 +101,7 @@ def check_if_volunteer_id_is_banned(volunteer_id: str, drive_manager: GoogleDriv
     :param volunteer_id: The id of the volunteer.
     :param drive_manager: An instance of GoogleDriveReminderManager.
 
-    :return: False if the volunteer is banned, True if he was banned more than 12 months ago or if he is not banned.
+    :return: True if a no-response ban is still active, otherwise False.
     """
     today = date.today()
     twelve_months_ago = today.replace(year=today.year - 1)
@@ -108,7 +113,7 @@ def check_if_volunteer_id_is_banned(volunteer_id: str, drive_manager: GoogleDriv
         # Check if the row is empty before accessing elements
         if len(row) > 0 and row[0].split('/')[-1] == volunteer_id and int(row[2]) > 4:
             last_contact_date = datetime.strptime(row[1], '%Y-%m-%d').date()
-            return last_contact_date <= twelve_months_ago
+            return last_contact_date > twelve_months_ago
     return False
 
 

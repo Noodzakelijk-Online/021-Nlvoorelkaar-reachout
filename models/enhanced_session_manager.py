@@ -111,7 +111,8 @@ class EnhancedSessionManager:
         if cls._session is not None:
             try:
                 cls._session.close()
-            except Exception as e:
+            except (requests.RequestException, AttributeError, RuntimeError) as e:
+                logger.warning("Error closing existing session")
                 logger.warning(f"Error closing existing session: {e}")
         
         # Create new session
@@ -264,7 +265,8 @@ class EnhancedSessionManager:
             try:
                 cls._session.close()
                 logger.info("Session closed successfully")
-            except Exception as e:
+            except (requests.RequestException, AttributeError, RuntimeError) as e:
+                logger.warning("Error closing session")
                 logger.warning(f"Error closing session: {e}")
             finally:
                 cls._session = None

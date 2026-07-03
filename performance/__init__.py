@@ -35,18 +35,45 @@ from .cache_manager import (
     cached
 )
 
-from .async_engine import (
-    AsyncHTTPClient,
-    AsyncTaskQueue,
-    ParallelProcessor,
-    TaskPriority,
-    TaskResult,
-    TokenBucket,
-    get_http_client,
-    get_processor,
-    run_async,
-    async_to_sync
-)
+try:
+    from .async_engine import (
+        AsyncHTTPClient,
+        AsyncTaskQueue,
+        ParallelProcessor,
+        TaskPriority,
+        TaskResult,
+        TokenBucket,
+        get_http_client,
+        get_processor,
+        run_async,
+        async_to_sync
+    )
+except ModuleNotFoundError as exc:
+    _ASYNC_IMPORT_ERROR = exc
+
+    class _MissingAsyncEngine:
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError(
+                "Optional performance async dependencies are not installed. "
+                "Install the project performance dependencies before using async performance features."
+            ) from _ASYNC_IMPORT_ERROR
+
+    AsyncHTTPClient = AsyncTaskQueue = ParallelProcessor = TokenBucket = _MissingAsyncEngine
+    TaskPriority = TaskResult = _MissingAsyncEngine
+
+    def get_http_client(*args, **kwargs):
+        return _MissingAsyncEngine(*args, **kwargs)
+
+    def get_processor(*args, **kwargs):
+        return _MissingAsyncEngine(*args, **kwargs)
+
+    def run_async(*args, **kwargs):
+        raise RuntimeError(
+            "Optional performance async dependencies are not installed. "
+            "Install the project performance dependencies before using async performance features."
+        ) from _ASYNC_IMPORT_ERROR
+
+    async_to_sync = run_async
 
 from .database_optimizer import (
     ConnectionPool,
@@ -300,39 +327,11 @@ class PerformanceManager:
         messages: list,
         on_progress: callable = None
     ) -> list:
-        """
-        Send messages in optimized batches
-        
-        Args:
-            messages: List of messages to send
-            on_progress: Progress callback
-        
-        Returns:
-            List of send results
-        """
-        self._ensure_initialized()
-        
-        results = []
-        total = len(messages)
-        
-        for i, message in enumerate(messages):
-            # Wait for rate limit
-            self._rate_limiter.wait()
-            
-            # Send message (placeholder)
-            result = self._send_message(message)
-            results.append(result)
-            
-            # Record response
-            self._rate_limiter.record_response(
-                response_time_ms=result.get('duration_ms', 100),
-                success=result.get('success', True)
-            )
-            
-            if on_progress:
-                on_progress(i + 1, total)
-        
-        return results
+        """Refuse optimized batch sending outside the outreach approval ledger."""
+        raise RuntimeError(
+            "PerformanceManager batch sending is disabled. Use OutreachLedger.send_approved_drafts "
+            "so every external message has approval, send evidence, and audit history."
+        )
     
     def schedule_heavy_task(
         self,
@@ -444,9 +443,11 @@ class PerformanceManager:
         return []
     
     def _send_message(self, message: dict) -> dict:
-        """Placeholder for message sending"""
-        # This would be implemented with actual messaging logic
-        return {'success': True, 'duration_ms': 100}
+        """Refuse placeholder success for external message delivery."""
+        raise RuntimeError(
+            "PerformanceManager direct message sending is disabled. Use OutreachLedger.send_approved_drafts "
+            "so every external message has approval, send evidence, and audit history."
+        )
 
 
 # Global performance manager instance

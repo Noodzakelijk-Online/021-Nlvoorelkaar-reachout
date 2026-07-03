@@ -213,7 +213,7 @@ class HumanBehaviorEngine:
         for callback in self._callbacks['on_session_end']:
             try:
                 callback(stats)
-            except Exception as e:
+            except (TypeError, RuntimeError, AttributeError) as e:
                 logger.error(f"Session end callback error: {e}")
         
         logger.info(f"Session ended: {stats.messages_sent if stats else 0} messages")
@@ -402,7 +402,7 @@ class HumanBehaviorEngine:
             for callback in self._callbacks['after_message']:
                 try:
                     callback(self._message_count)
-                except Exception as e:
+                except (TypeError, RuntimeError, AttributeError) as e:
                     logger.error(f"After message callback error: {e}")
         
         return success
@@ -421,7 +421,7 @@ class HumanBehaviorEngine:
         for callback in self._callbacks['on_break']:
             try:
                 callback(duration, reason)
-            except Exception as e:
+            except (TypeError, RuntimeError, AttributeError) as e:
                 logger.error(f"Break callback error: {e}")
         
         # Wait for break

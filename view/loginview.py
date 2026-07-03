@@ -127,7 +127,7 @@ class LoginView(BaseView):
     def login(self) -> None:
         try:
             success = self.login_controller.login(self.username.get(), self.password.get())
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError) as e:
             logging.error(e)
             self.error_label.configure(text="Connection problems, please try again.")
             return

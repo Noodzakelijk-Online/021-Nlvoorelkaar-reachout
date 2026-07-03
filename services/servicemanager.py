@@ -3,10 +3,16 @@ import time
 from typing import List, Optional
 
 from controllers.logincontroller import LoginController
-from services.blacklistservice import BlacklistService
+try:
+    from services.blacklistservice import BlacklistService
+except ModuleNotFoundError:
+    BlacklistService = None
 from services.locationautocompleteservice import LocationAutocompleteService
 from services.messagingservice import MessagingService
-from services.reminderservice import ReminderService
+try:
+    from services.reminderservice import ReminderService
+except ModuleNotFoundError:
+    ReminderService = None
 from services.servicemanagerinterface import ServiceManagerInterface
 from services.volunteerservice import VolunteerService
 
@@ -24,8 +30,8 @@ class ServiceManager(ServiceManagerInterface):
         self.__observers = []
         self.location_autocomplete_service = LocationAutocompleteService()
         self.messaging_service = MessagingService()
-        self.reminder_service = ReminderService()
-        self.blacklist_service = BlacklistService()
+        self.reminder_service = ReminderService() if ReminderService else None
+        self.blacklist_service = BlacklistService() if BlacklistService else None
 
     def subscribe(self, observer):
         """
@@ -98,17 +104,22 @@ class ServiceManager(ServiceManagerInterface):
 
     def send_messages(self, username: str, password: str, message: str, phoneNumber: str, recipients: List[str]):
         """
-        Send a message by using the MessagingService.
+        Refuse legacy direct sending outside the outreach approval ledger.
         """
-        threading.Thread(target=self.__send_message_in_thread,
-                         args=(username, password, message, phoneNumber, recipients)).start()
+        raise RuntimeError(
+            "Legacy ServiceManager direct sending is disabled. Use OutreachLedger.send_approved_drafts "
+            "so every external message has approval, send evidence, and audit history."
+        )
 
     def __send_message_in_thread(self, username: str, password: str, message: str, phoneNumber: str,
                                  recipients: List[str]):
         """
-        This private method is used to send a message in a separate thread.
+        Refuse legacy threaded direct sending outside the outreach approval ledger.
         """
-        self.messaging_service.send_messages(self, username, password, message, phoneNumber, recipients)
+        raise RuntimeError(
+            "Legacy ServiceManager direct sending is disabled. Use OutreachLedger.send_approved_drafts "
+            "so every external message has approval, send evidence, and audit history."
+        )
 
     def notify_starting_messaging(self, data):
         """
@@ -161,14 +172,19 @@ class ServiceManager(ServiceManagerInterface):
     def start_reminder_service(self, reminder_frequency: Optional[int] = None,
                                custom_reminder_message: Optional[str] = None):
         """
-        Start the reminder service.
+        Refuse legacy reminder sending outside the outreach approval ledger.
         """
-        self.reminder_service.run_reminder_service(reminder_frequency, custom_reminder_message)
+        raise RuntimeError(
+            "Legacy reminder sending is disabled. Use OutreachLedger follow-up plans, approval, "
+            "and send evidence so every reminder is reviewed and auditable."
+        )
 
     def get_unanswered_chats(self, reminder_frequency):
         """
         Get all the unanswered chats by using the MessagingService.
         """
+        if not self.reminder_service:
+            raise RuntimeError("Reminder service is unavailable because optional Google API dependencies are missing")
         self.reminder_service.get_unanswered_chats(reminder_frequency)
 
     def notify_unanswered_chats(self, data):

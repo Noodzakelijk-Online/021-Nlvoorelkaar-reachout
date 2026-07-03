@@ -6,7 +6,7 @@ Handles encryption and decryption of user credentials locally
 import os
 import json
 import base64
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import logging
@@ -82,8 +82,8 @@ class CredentialManager:
             logger.info("Credentials saved successfully")
             return True
             
-        except Exception as e:
-            logger.error(f"Failed to save credentials: {e}")
+        except (OSError, ValueError, TypeError) as e:
+            logger.error("Failed to save credentials: %s", type(e).__name__)
             return False
             
     def load_credentials(self, master_password: str) -> dict:
@@ -105,8 +105,8 @@ class CredentialManager:
             logger.info("Credentials loaded successfully")
             return credentials
             
-        except Exception as e:
-            logger.error(f"Failed to load credentials: {e}")
+        except (OSError, json.JSONDecodeError, TypeError, ValueError, InvalidToken) as e:
+            logger.error("Failed to load credentials: %s", type(e).__name__)
             return None
             
     def credentials_exist(self) -> bool:
@@ -129,8 +129,8 @@ class CredentialManager:
             logger.info("Credentials deleted successfully")
             return True
             
-        except Exception as e:
-            logger.error(f"Failed to delete credentials: {e}")
+        except OSError as e:
+            logger.error("Failed to delete credentials: %s", type(e).__name__)
             return False
             
     def change_master_password(self, old_password: str, new_password: str) -> bool:
@@ -151,8 +151,8 @@ class CredentialManager:
                 new_password
             )
             
-        except Exception as e:
-            logger.error(f"Failed to change master password: {e}")
+        except (TypeError, KeyError, OSError, ValueError) as e:
+            logger.error("Failed to change master password: %s", type(e).__name__)
             return False
 
     def has_credentials(self, service: str = "default") -> bool:
@@ -184,8 +184,8 @@ class CredentialManager:
                 f.write(fernet.encrypt(json.dumps(payload).encode()))
             self._chmod_private(self.credentials_file)
             return True
-        except Exception as e:
-            logger.error(f"Failed to store credentials for {service}: {e}")
+        except (OSError, TypeError, ValueError, KeyError) as e:
+            logger.error("Failed to store credentials: %s", type(e).__name__)
             return False
 
     def get_credentials(self, service: str = "default", master_password: str = None) -> dict:

@@ -206,7 +206,7 @@ class EnhancedReminderService:
             ))
             conn.commit()
             
-            logger.info(f"Created reminder {cursor.lastrowid} for {volunteer_id}")
+            logger.info("Created reminder %s", cursor.lastrowid)
             return cursor.lastrowid
     
     def _calculate_next_reminder_date(
@@ -553,7 +553,7 @@ class EnhancedBlacklistService:
                 ))
                 conn.commit()
                 
-                logger.info(f"Added {profile_id} to blacklist (reason: {reason.value})")
+                logger.info("Added volunteer profile to blacklist (reason: %s)", reason.value)
                 return cursor.lastrowid
                 
             except sqlite3.IntegrityError:
@@ -569,7 +569,7 @@ class EnhancedBlacklistService:
                 ''', (name, reason.value, notes, expires_at, 1 if is_permanent else 0, profile_id))
                 conn.commit()
                 
-                logger.info(f"Updated blacklist entry for {profile_id}")
+                logger.info("Updated volunteer blacklist entry")
                 return -1
     
     def remove_from_blacklist(self, profile_id: str) -> bool:
@@ -584,7 +584,7 @@ class EnhancedBlacklistService:
             conn.commit()
             
             if cursor.rowcount > 0:
-                logger.info(f"Removed {profile_id} from blacklist")
+                logger.info("Removed volunteer blacklist entry")
                 return True
             return False
     
@@ -742,8 +742,8 @@ class EnhancedBlacklistService:
                 else:
                     stats['updated'] += 1
                     
-            except Exception as e:
-                logger.error(f"Error importing blacklist entry: {e}")
+            except (AttributeError, KeyError, TypeError, ValueError, sqlite3.DatabaseError) as e:
+                logger.error("Error importing blacklist entry: %s", type(e).__name__)
                 stats['failed'] += 1
         
         logger.info(f"Bulk import complete: {stats}")

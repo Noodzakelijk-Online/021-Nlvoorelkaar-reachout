@@ -4,14 +4,20 @@ Automated daily synchronization scheduler with monitoring and management
 """
 
 import asyncio
-import schedule
 import threading
 import time
 import logging
+import re
+import sqlite3
 from typing import Dict, List, Optional, Callable
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 from enum import Enum
+
+try:
+    import schedule
+except ImportError:
+    schedule = None
 
 from .sync_service import SyncService, SyncReport
 
@@ -73,10 +79,33 @@ class SchedulerService:
         
         # Initialize default tasks
         self._initialize_default_tasks()
+
+    def _error_label(self, error: Optional[object]) -> Optional[str]:
+        """Reduce scheduler errors to a non-sensitive class-style label."""
+        if error is None:
+            return None
+        if isinstance(error, BaseException):
+            return type(error).__name__
+        text = str(error).strip()
+        if not text:
+            return None
+        prefix = text.split(":", 1)[0].strip()
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]*", prefix) and len(prefix) <= 120:
+            return prefix
+        return "Error"
+
+    def _schedule_available(self) -> bool:
+        """Return whether the schedule dependency is available."""
+        if schedule is not None:
+            return True
+        self.logger.warning("Schedule package is unavailable. Install `schedule` for scheduler features.")
+        return False
     
     def _initialize_default_tasks(self):
         """Initialize default scheduled tasks"""
         try:
+            if not self._schedule_available():
+                return
             # Daily synchronization task
             self.add_scheduled_task(
                 task_id='daily_sync',
@@ -103,12 +132,15 @@ class SchedulerService:
             
             self.logger.info("Initialized default scheduled tasks")
             
-        except Exception as e:
-            self.logger.error(f"Error initializing default tasks: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, re.error) as e:
+            self.logger.error("Error initializing default tasks: %s", type(e).__name__)
     
     def add_scheduled_task(self, task_id: str, name: str, schedule_time: str, function: Callable):
         """Add a new scheduled task"""
         try:
+            if not self._schedule_available():
+                return
+
             task = ScheduledTask(
                 task_id=task_id,
                 name=name,
@@ -124,17 +156,20 @@ class SchedulerService:
             
             self.scheduled_tasks[task_id] = task
             
-            # Add to schedule
-            schedule.every().day.at(schedule_time).do(self._execute_task, task_id)
+            # Add to schedule and tag by task id so updates/removals are precise.
+            schedule.every().day.at(schedule_time).do(self._execute_task, task_id).tag(task_id)
             
             self.logger.info(f"Added scheduled task: {name} at {schedule_time}")
             
-        except Exception as e:
-            self.logger.error(f"Error adding scheduled task: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, re.error) as e:
+            self.logger.error("Error adding scheduled task: %s", type(e).__name__)
     
     def start_scheduler(self):
         """Start the scheduler service"""
         try:
+            if not self._schedule_available():
+                self.scheduler_status = ScheduleStatus.ERROR
+                return
             if self.scheduler_status == ScheduleStatus.RUNNING:
                 self.logger.warning("Scheduler is already running")
                 return
@@ -151,8 +186,8 @@ class SchedulerService:
             
             self.logger.info("Scheduler service started successfully")
             
-        except Exception as e:
-            self.logger.error(f"Error starting scheduler: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, OSError, asyncio.CancelledError) as e:
+            self.logger.error("Error starting scheduler: %s", type(e).__name__)
             self.scheduler_status = ScheduleStatus.ERROR
     
     def stop_scheduler(self):
@@ -163,14 +198,15 @@ class SchedulerService:
             # Update task statuses
             for task in self.scheduled_tasks.values():
                 task.status = ScheduleStatus.STOPPED
-            
-            # Clear schedule
-            schedule.clear()
+
+            if self._schedule_available():
+                # Clear schedule
+                schedule.clear()
             
             self.logger.info("Scheduler service stopped")
             
-        except Exception as e:
-            self.logger.error(f"Error stopping scheduler: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, OSError) as e:
+            self.logger.error("Error stopping scheduler: %s", type(e).__name__)
     
     def pause_scheduler(self):
         """Pause the scheduler service"""
@@ -183,8 +219,8 @@ class SchedulerService:
             
             self.logger.info("Scheduler service paused")
             
-        except Exception as e:
-            self.logger.error(f"Error pausing scheduler: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, OSError) as e:
+            self.logger.error("Error pausing scheduler: %s", type(e).__name__)
     
     def resume_scheduler(self):
         """Resume the scheduler service"""
@@ -201,11 +237,14 @@ class SchedulerService:
             
             self.logger.info("Scheduler service resumed")
             
-        except Exception as e:
-            self.logger.error(f"Error resuming scheduler: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, OSError) as e:
+            self.logger.error("Error resuming scheduler: %s", type(e).__name__)
     
     def _scheduler_loop(self):
         """Main scheduler loop"""
+        if not self._schedule_available():
+            self.logger.warning("Cannot run scheduler loop without schedule dependency")
+            return
         self.logger.info("Scheduler loop started")
         
         while self.scheduler_status in [ScheduleStatus.RUNNING, ScheduleStatus.PAUSED]:
@@ -215,8 +254,8 @@ class SchedulerService:
                 
                 time.sleep(60)  # Check every minute
                 
-            except Exception as e:
-                self.logger.error(f"Error in scheduler loop: {str(e)}")
+            except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, OSError, asyncio.CancelledError) as e:
+                self.logger.error("Error in scheduler loop: %s", type(e).__name__)
                 self.scheduler_status = ScheduleStatus.ERROR
                 break
         
@@ -247,14 +286,14 @@ class SchedulerService:
                 # Record successful execution
                 self._record_task_execution(task_id, True, None)
             else:
-                raise Exception("Task execution failed")
+                raise RuntimeError("Task execution failed")
                 
-        except Exception as e:
-            error_msg = str(e)
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, sqlite3.DatabaseError) as e:
+            error_msg = type(e).__name__
             task.error_count += 1
             task.last_error = error_msg
             
-            self.logger.error(f"Task {task.name} failed: {error_msg}")
+            self.logger.error("Task %s failed: %s", task.name, error_msg)
             
             # Record failed execution
             self._record_task_execution(task_id, False, error_msg)
@@ -282,39 +321,42 @@ class SchedulerService:
         except asyncio.TimeoutError:
             self.logger.error(f"Task {task.name} timed out after {self.config['task_timeout_minutes']} minutes")
             return False
-        except Exception as e:
-            self.logger.error(f"Task {task.name} execution error: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, sqlite3.DatabaseError) as e:
+            self.logger.error("Task %s execution error: %s", task.name, type(e).__name__)
             return False
     
     def _schedule_retry(self, task_id: str):
         """Schedule a retry for a failed task"""
         try:
+            if not self._schedule_available():
+                return
             task = self.scheduled_tasks[task_id]
             retry_time = datetime.now() + timedelta(minutes=self.config['retry_delay_minutes'])
             
             self.logger.info(f"Scheduling retry for task {task.name} at {retry_time}")
             
-            # Schedule one-time retry
+            # Schedule one-time retry and keep a dedicated retry tag.
             schedule.every().day.at(retry_time.strftime('%H:%M')).do(
                 self._execute_retry, task_id
             ).tag(f"retry_{task_id}")
             
-        except Exception as e:
-            self.logger.error(f"Error scheduling retry: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError) as e:
+            self.logger.error("Error scheduling retry: %s", type(e).__name__)
     
     def _execute_retry(self, task_id: str):
         """Execute a retry attempt"""
         try:
             self.logger.info(f"Executing retry for task {task_id}")
-            
-            # Remove retry tag
-            schedule.clear(f"retry_{task_id}")
+
+            if self._schedule_available():
+                # Remove retry tag
+                schedule.clear(f"retry_{task_id}")
             
             # Execute task
             self._execute_task(task_id)
             
-        except Exception as e:
-            self.logger.error(f"Error executing retry: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError) as e:
+            self.logger.error("Error executing retry: %s", type(e).__name__)
     
     def _record_task_execution(self, task_id: str, success: bool, error_msg: Optional[str]):
         """Record task execution in history"""
@@ -324,7 +366,7 @@ class SchedulerService:
                 'task_name': self.scheduled_tasks[task_id].name,
                 'execution_time': datetime.now().isoformat(),
                 'success': success,
-                'error_message': error_msg,
+                'error_message': self._error_label(error_msg),
                 'duration': None  # Could be enhanced to track duration
             }
             
@@ -334,8 +376,8 @@ class SchedulerService:
             if len(self.task_history) > 1000:
                 self.task_history = self.task_history[-1000:]
                 
-        except Exception as e:
-            self.logger.error(f"Error recording task execution: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, sqlite3.DatabaseError) as e:
+            self.logger.error("Error recording task execution: %s", type(e).__name__)
     
     def _calculate_next_run_time(self, schedule_time: str) -> datetime:
         """Calculate next run time for a scheduled task"""
@@ -353,8 +395,8 @@ class SchedulerService:
             
             return next_run
             
-        except Exception as e:
-            self.logger.error(f"Error calculating next run time: {str(e)}")
+        except (AttributeError, ValueError, TypeError, KeyError, RuntimeError) as e:
+            self.logger.error("Error calculating next run time: %s", type(e).__name__)
             return datetime.now() + timedelta(days=1)
     
     async def _run_daily_sync(self) -> bool:
@@ -371,8 +413,8 @@ class SchedulerService:
                 self.logger.error("Daily synchronization failed")
                 return False
                 
-        except Exception as e:
-            self.logger.error(f"Daily sync task error: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, sqlite3.DatabaseError) as e:
+            self.logger.error("Daily sync task error: %s", type(e).__name__)
             return False
     
     def _run_daily_maintenance(self) -> bool:
@@ -395,8 +437,8 @@ class SchedulerService:
             self.logger.info("Daily maintenance completed successfully")
             return True
             
-        except Exception as e:
-            self.logger.error(f"Daily maintenance task error: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, sqlite3.DatabaseError) as e:
+            self.logger.error("Daily maintenance task error: %s", type(e).__name__)
             return False
     
     def _run_daily_backup(self) -> bool:
@@ -413,8 +455,8 @@ class SchedulerService:
                 self.logger.error("Daily backup failed")
                 return False
                 
-        except Exception as e:
-            self.logger.error(f"Daily backup task error: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError) as e:
+            self.logger.error("Daily backup task error: %s", type(e).__name__)
             return False
     
     def _clean_old_records(self):
@@ -433,8 +475,8 @@ class SchedulerService:
             
             self.logger.info("Old records cleaned successfully")
             
-        except Exception as e:
-            self.logger.error(f"Error cleaning old records: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, IndexError, TypeError) as e:
+            self.logger.error("Error cleaning old records: %s", type(e).__name__)
     
     def get_scheduler_status(self) -> Dict:
         """Get current scheduler status"""
@@ -466,8 +508,8 @@ class SchedulerService:
             
             return status
             
-        except Exception as e:
-            self.logger.error(f"Error getting scheduler status: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, IndexError) as e:
+            self.logger.error("Error getting scheduler status: %s", type(e).__name__)
             return {}
     
     def get_task_details(self, task_id: str) -> Optional[Dict]:
@@ -491,8 +533,8 @@ class SchedulerService:
                 'success_rate': (task.run_count - task.error_count) / max(task.run_count, 1) * 100
             }
             
-        except Exception as e:
-            self.logger.error(f"Error getting task details: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError) as e:
+            self.logger.error("Error getting task details: %s", type(e).__name__)
             return None
     
     def get_task_history(self, task_id: Optional[str] = None, days: int = 7) -> List[Dict]:
@@ -510,8 +552,8 @@ class SchedulerService:
             
             return sorted(history, key=lambda x: x['execution_time'], reverse=True)
             
-        except Exception as e:
-            self.logger.error(f"Error getting task history: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError) as e:
+            self.logger.error("Error getting task history: %s", type(e).__name__)
             return []
     
     def run_task_now(self, task_id: str) -> bool:
@@ -525,13 +567,15 @@ class SchedulerService:
             self._execute_task(task_id)
             return True
             
-        except Exception as e:
-            self.logger.error(f"Error running task immediately: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError) as e:
+            self.logger.error("Error running task immediately: %s", type(e).__name__)
             return False
     
     def update_task_schedule(self, task_id: str, new_schedule_time: str) -> bool:
         """Update the schedule time for a task"""
         try:
+            if not self._schedule_available():
+                return False
             if task_id not in self.scheduled_tasks:
                 self.logger.error(f"Task {task_id} not found")
                 return False
@@ -550,8 +594,8 @@ class SchedulerService:
             self.logger.info(f"Updated task {task.name} schedule from {old_time} to {new_schedule_time}")
             return True
             
-        except Exception as e:
-            self.logger.error(f"Error updating task schedule: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError) as e:
+            self.logger.error("Error updating task schedule: %s", type(e).__name__)
             return False
     
     def get_performance_metrics(self) -> Dict:
@@ -591,6 +635,6 @@ class SchedulerService:
             
             return metrics
             
-        except Exception as e:
-            self.logger.error(f"Error getting performance metrics: {str(e)}")
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError) as e:
+            self.logger.error("Error getting performance metrics: %s", type(e).__name__)
             return {}

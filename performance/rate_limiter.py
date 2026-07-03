@@ -445,7 +445,7 @@ class SmartScheduler:
         while self._running:
             try:
                 self._process_tasks()
-            except Exception as e:
+            except (RuntimeError, ValueError, OSError) as e:
                 logger.error(f"Scheduler error: {e}")
             
             time.sleep(10)  # Check every 10 seconds
@@ -476,8 +476,7 @@ class SmartScheduler:
             task['completed_at'] = datetime.now()
             task['result'] = result
             logger.info(f"Task completed: {task['name']}")
-            
-        except Exception as e:
+        except (TypeError, ValueError, RuntimeError) as e:
             task['retries'] += 1
             
             if task['retries'] < task['max_retries']:

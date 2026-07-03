@@ -36,6 +36,8 @@ class ScrapingConfig:
 
 class EnhancedScraper:
     """Enhanced web scraper with improved reliability"""
+
+    LEDGER_SEND_APPROVAL_TOKEN = "outreach_ledger_approved_send"
     
     def __init__(self, config: ScrapingConfig = None):
         self.config = config or ScrapingConfig()
@@ -105,7 +107,7 @@ class EnhancedScraper:
                     time.sleep(wait_time)
                     continue
                 elif response.status_code in [403, 404]:
-                    logger.error(f"Client error {response.status_code} for {url}")
+                    logger.error("Client error %s for request", response.status_code)
                     return None
                 else:
                     logger.warning(f"HTTP {response.status_code} for {url}, attempt {attempt + 1}")
@@ -114,8 +116,8 @@ class EnhancedScraper:
                 logger.warning(f"Timeout for {url}, attempt {attempt + 1}")
             except requests.exceptions.ConnectionError:
                 logger.warning(f"Connection error for {url}, attempt {attempt + 1}")
-            except Exception as e:
-                logger.error(f"Unexpected error for {url}: {e}")
+            except requests.exceptions.RequestException as e:
+                logger.error("Unexpected request error: %s", type(e).__name__)
                 
             # Exponential backoff
             if attempt < self.config.max_retries - 1:
@@ -123,7 +125,7 @@ class EnhancedScraper:
                 time.sleep(wait_time)
                 
         self.consecutive_failures += 1
-        logger.error(f"Failed to fetch {url} after {self.config.max_retries} attempts")
+        logger.error("Failed to fetch URL after %s attempts", self.config.max_retries)
         return None
         
     def login(self, username: str, password: str) -> bool:
@@ -184,8 +186,8 @@ class EnhancedScraper:
                 logger.error("Login failed - invalid credentials or form structure changed")
                 return False
                 
-        except Exception as e:
-            logger.error(f"Login error: {e}")
+        except (AttributeError, TypeError) as e:
+            logger.error("Login error: %s", type(e).__name__)
             return False
             
     def _is_logged_in(self, response: requests.Response) -> bool:
@@ -236,8 +238,8 @@ class EnhancedScraper:
             logger.info(f"Total volunteers found: {len(volunteers)}")
             return volunteers
             
-        except Exception as e:
-            logger.error(f"Error searching volunteers: {e}")
+        except (AttributeError, TypeError, ValueError) as e:
+            logger.error("Error searching volunteers: %s", type(e).__name__)
             return []
             
     def _build_search_url(self, params: Dict[str, Any], page: int = 1) -> str:
@@ -284,8 +286,8 @@ class EnhancedScraper:
                     
             return volunteers
             
-        except Exception as e:
-            logger.error(f"Error parsing volunteers page: {e}")
+        except (AttributeError, TypeError) as e:
+            logger.error("Error parsing volunteers page: %s", type(e).__name__)
             return []
             
     def _parse_volunteer_card(self, card) -> Optional[Dict[str, Any]]:
@@ -346,8 +348,8 @@ class EnhancedScraper:
             
             return volunteer
             
-        except Exception as e:
-            logger.error(f"Error parsing volunteer card: {e}")
+        except (AttributeError, TypeError, ValueError) as e:
+            logger.error("Error parsing volunteer card: %s", type(e).__name__)
             return None
             
     def _extract_id_from_url(self, url: str) -> Optional[str]:
@@ -373,7 +375,7 @@ class EnhancedScraper:
                 
             return None
             
-        except Exception:
+        except (TypeError, AttributeError):
             return None
             
     def _has_next_page(self, html: str) -> bool:
@@ -392,7 +394,7 @@ class EnhancedScraper:
             
             return any(indicator for indicator in next_indicators)
             
-        except Exception:
+        except (TypeError, AttributeError):
             return False
             
     def get_volunteer_details(self, volunteer_id: str) -> Optional[Dict[str, Any]]:
@@ -407,8 +409,8 @@ class EnhancedScraper:
                 
             return self._parse_volunteer_profile(response.text, volunteer_id)
             
-        except Exception as e:
-            logger.error(f"Error getting volunteer details for {volunteer_id}: {e}")
+        except (AttributeError, TypeError) as e:
+            logger.error("Error getting volunteer details: %s", type(e).__name__)
             return None
             
     def _parse_volunteer_profile(self, html: str, volunteer_id: str) -> Dict[str, Any]:
@@ -433,12 +435,18 @@ class EnhancedScraper:
             
             return volunteer
             
-        except Exception as e:
-            logger.error(f"Error parsing volunteer profile: {e}")
+        except (AttributeError, TypeError) as e:
+            logger.error("Error parsing volunteer profile: %s", type(e).__name__)
             return {'volunteer_id': volunteer_id}
             
-    def send_message(self, volunteer_id: str, message: str) -> bool:
-        """Send message to volunteer with enhanced error handling"""
+    def send_message(self, volunteer_id: str, message: str, approval_token: Optional[str] = None) -> bool:
+        """Send message to volunteer only when invoked by the approval ledger."""
+        if approval_token != self.LEDGER_SEND_APPROVAL_TOKEN:
+            raise RuntimeError(
+                "Direct scraper message sending is disabled. Use OutreachLedger.send_approved_drafts "
+                "so every message has approval, send evidence, and audit history."
+            )
+
         try:
             # Build message URL
             message_url = urljoin(self.config.base_url, f"/bericht/versturen/{volunteer_id}")
@@ -446,7 +454,7 @@ class EnhancedScraper:
             # Get message form
             response = self._make_request(message_url)
             if not response:
-                logger.error(f"Failed to load message form for volunteer {volunteer_id}")
+                logger.error("Failed to load message form for selected volunteer")
                 return False
                 
             soup = BeautifulSoup(response.text, 'html.parser')
@@ -484,14 +492,14 @@ class EnhancedScraper:
                 # Check for success indicators
                 success_indicators = ['verzonden', 'sent', 'success', 'bedankt']
                 if any(indicator in response.text.lower() for indicator in success_indicators):
-                    logger.info(f"Message sent successfully to volunteer {volunteer_id}")
+                    logger.info("Message sent successfully to selected volunteer")
                     return True
                     
-            logger.error(f"Failed to send message to volunteer {volunteer_id}")
+            logger.error("Failed to send message to selected volunteer")
             return False
             
-        except Exception as e:
-            logger.error(f"Error sending message to volunteer {volunteer_id}: {e}")
+        except (AttributeError, TypeError, requests.exceptions.RequestException, ValueError) as e:
+            logger.error("Error sending message to selected volunteer: %s", type(e).__name__)
             return False
             
     def check_health(self) -> Dict[str, Any]:
@@ -508,10 +516,10 @@ class EnhancedScraper:
                 'last_check': datetime.now().isoformat()
             }
             
-        except Exception as e:
+        except (AttributeError, TypeError) as e:
             return {
                 'status': 'error',
-                'error': str(e),
+                'error': type(e).__name__,
                 'consecutive_failures': self.consecutive_failures,
                 'last_check': datetime.now().isoformat()
             }

@@ -4,20 +4,39 @@ Integrates both frontend scraping and backend API access to reach all 93,141 vol
 """
 
 import requests
+import sqlite3
 import json
 import time
 import logging
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+try:
+    from selenium import webdriver
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.common.exceptions import TimeoutException, NoSuchElementException
+except ModuleNotFoundError:
+    webdriver = None
+    By = None
+    WebDriverWait = None
+    EC = None
 
-from ..database.database_manager import DatabaseManager
-from ..utils.credential_manager import CredentialManager
+    class TimeoutException(Exception):
+        pass
+
+    class NoSuchElementException(Exception):
+        pass
+
+try:
+    from database.database_manager import DatabaseManager
+except ImportError:
+    from ..database.database_manager import DatabaseManager
+try:
+    from utils.credential_manager import CredentialManager
+except ImportError:
+    from ..utils.credential_manager import CredentialManager
 
 class VolunteerDataService:
     """
@@ -54,6 +73,10 @@ class VolunteerDataService:
                 self.logger.error("No credentials found for NLvoorElkaar")
                 return False
                 
+            if webdriver is None:
+                self.logger.error("Selenium is not installed; browser-based authentication is unavailable")
+                return False
+
             # Setup Selenium driver for authentication
             options = webdriver.ChromeOptions()
             options.add_argument('--headless')
@@ -90,8 +113,8 @@ class VolunteerDataService:
             self.logger.info("Successfully authenticated with NLvoorElkaar")
             return True
             
-        except Exception as e:
-            self.logger.error(f"Authentication failed: {str(e)}")
+        except (TimeoutException, NoSuchElementException, KeyError, ValueError, TypeError) as e:
+            self.logger.error("Authentication failed: %s", type(e).__name__)
             return False
     
     def get_visible_volunteers(self, location: str = "", category: str = "", limit: int = 5518) -> List[Dict]:
@@ -144,8 +167,8 @@ class VolunteerDataService:
             self.logger.info(f"Retrieved {len(volunteers)} visible volunteers")
             return volunteers
             
-        except Exception as e:
-            self.logger.error(f"Error retrieving visible volunteers: {str(e)}")
+        except (requests.RequestException, TypeError, AttributeError, ValueError) as e:
+            self.logger.error("Error retrieving visible volunteers: %s", type(e).__name__)
             return volunteers
     
     def access_hidden_volunteers_via_api(self) -> List[Dict]:
@@ -188,107 +211,38 @@ class VolunteerDataService:
                                 data = response.json()
                                 if isinstance(data, list):
                                     hidden_volunteers.extend(data)
-                        except:
+                        except (requests.RequestException, ValueError, TypeError):
                             continue
             
-            # Method 3: Strategic Request Posting to Trigger Hidden Volunteer Responses
+            # Strategic request posting is intentionally disabled unless routed through
+            # the reviewed outreach ledger. It must not run as a discovery shortcut.
             hidden_volunteers.extend(self._trigger_hidden_volunteer_responses())
             
             self.logger.info(f"Retrieved {len(hidden_volunteers)} hidden volunteers")
             return hidden_volunteers
             
-        except Exception as e:
-            self.logger.error(f"Error accessing hidden volunteers: {str(e)}")
+        except (requests.RequestException, ValueError, TypeError, KeyError) as e:
+            self.logger.error("Error accessing hidden volunteers: %s", type(e).__name__)
             return hidden_volunteers
     
     def _trigger_hidden_volunteer_responses(self) -> List[Dict]:
         """
-        Post strategic requests to trigger responses from hidden volunteers
+        Refuse strategic request posting outside the reviewed outreach ledger.
         """
-        triggered_volunteers = []
-        
-        try:
-            # Strategic request categories that appeal to different volunteer types
-            strategic_requests = [
-                {
-                    'title': 'Hulp bij digitale vaardigheden voor senioren',
-                    'category': 'Computerhulp & ICT',
-                    'description': 'Zoek vrijwilligers om senioren te helpen met computers en smartphones'
-                },
-                {
-                    'title': 'Begeleiding bij boodschappen doen',
-                    'category': 'Boodschappen',
-                    'description': 'Hulp nodig bij wekelijkse boodschappen voor mensen met beperkte mobiliteit'
-                },
-                {
-                    'title': 'Taalondersteuning voor nieuwkomers',
-                    'category': 'Taal & lezen',
-                    'description': 'Nederlandse taalles voor mensen die net in Nederland zijn'
-                },
-                {
-                    'title': 'Klussen en onderhoud in de tuin',
-                    'category': 'Klussen buiten & tuin',
-                    'description': 'Hulp bij tuinonderhoud en kleine klusjes buitenshuis'
-                },
-                {
-                    'title': 'Gezelschap en sociale activiteiten',
-                    'category': 'Maatje, buddy & gezelschap',
-                    'description': 'Zoek iemand voor gezellige gesprekken en sociale activiteiten'
-                }
-            ]
-            
-            for request_data in strategic_requests:
-                # Post request to trigger hidden volunteer responses
-                volunteers = self._post_strategic_request(request_data)
-                triggered_volunteers.extend(volunteers)
-                time.sleep(5)  # Rate limiting between requests
-                
-            return triggered_volunteers
-            
-        except Exception as e:
-            self.logger.error(f"Error triggering hidden volunteer responses: {str(e)}")
-            return triggered_volunteers
+        self.logger.warning(
+            "Strategic request posting is disabled outside the outreach ledger; "
+            "create reviewed drafts or approved outreach work instead."
+        )
+        return []
     
     def _post_strategic_request(self, request_data: Dict) -> List[Dict]:
         """
-        Post a strategic request and capture responding volunteers
+        Refuse request posting outside the reviewed outreach ledger.
         """
-        responding_volunteers = []
-        
-        try:
-            if not self.driver:
-                return responding_volunteers
-                
-            # Navigate to request posting page
-            self.driver.get(f"{self.base_url}/hulpvragen/nieuw")
-            
-            # Fill request form
-            title_field = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.NAME, "title"))
-            )
-            title_field.send_keys(request_data['title'])
-            
-            description_field = self.driver.find_element(By.NAME, "description")
-            description_field.send_keys(request_data['description'])
-            
-            # Select category
-            category_select = self.driver.find_element(By.NAME, "category")
-            category_select.send_keys(request_data['category'])
-            
-            # Submit request (in test mode - don't actually post)
-            # submit_button = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
-            # submit_button.click()
-            
-            # Monitor for responses (simulate response monitoring)
-            # In real implementation, this would monitor the request for responses
-            # and extract volunteer contact information from responses
-            
-            self.logger.info(f"Strategic request prepared: {request_data['title']}")
-            
-        except Exception as e:
-            self.logger.error(f"Error posting strategic request: {str(e)}")
-            
-        return responding_volunteers
+        raise RuntimeError(
+            "Strategic request posting is disabled outside the outreach ledger. "
+            "External requests require explicit review, approval, evidence, and audit history."
+        )
     
     def _extract_volunteer_data(self, card_element) -> Optional[Dict]:
         """
@@ -327,8 +281,8 @@ class VolunteerDataService:
             
             return volunteer_data
             
-        except Exception as e:
-            self.logger.error(f"Error extracting volunteer data: {str(e)}")
+        except (AttributeError, TypeError) as e:
+            self.logger.error("Error extracting volunteer data: %s", type(e).__name__)
             return None
     
     def get_all_volunteers(self, location: str = "", category: str = "") -> Dict[str, List[Dict]]:
@@ -373,8 +327,8 @@ class VolunteerDataService:
             
             return all_volunteers
             
-        except Exception as e:
-            self.logger.error(f"Error retrieving all volunteers: {str(e)}")
+        except (requests.RequestException, TypeError, AttributeError, KeyError, sqlite3.DatabaseError) as e:
+            self.logger.error("Error retrieving all volunteers: %s", type(e).__name__)
             return all_volunteers
         
         finally:
@@ -397,8 +351,8 @@ class VolunteerDataService:
                 
             self.logger.info("Successfully stored volunteer data in database")
             
-        except Exception as e:
-            self.logger.error(f"Error storing volunteer data: {str(e)}")
+        except (sqlite3.DatabaseError, TypeError) as e:
+            self.logger.error("Error storing volunteer data: %s", type(e).__name__)
     
     def search_volunteers(self, criteria: Dict) -> List[Dict]:
         """
@@ -406,8 +360,8 @@ class VolunteerDataService:
         """
         try:
             return self.db_manager.search_volunteers(criteria)
-        except Exception as e:
-            self.logger.error(f"Error searching volunteers: {str(e)}")
+        except (sqlite3.DatabaseError, TypeError, KeyError) as e:
+            self.logger.error("Error searching volunteers: %s", type(e).__name__)
             return []
     
     def get_volunteer_contact_info(self, volunteer_id: str) -> Optional[Dict]:
@@ -426,8 +380,8 @@ class VolunteerDataService:
                 
             return volunteer
             
-        except Exception as e:
-            self.logger.error(f"Error getting volunteer contact info: {str(e)}")
+        except (sqlite3.DatabaseError, TypeError, KeyError, AttributeError) as e:
+            self.logger.error("Error getting volunteer contact info: %s", type(e).__name__)
             return None
     
     def _scrape_contact_details(self, profile_url: str) -> Dict:
@@ -463,8 +417,8 @@ class VolunteerDataService:
             except NoSuchElementException:
                 pass
                 
-        except Exception as e:
-            self.logger.error(f"Error scraping contact details: {str(e)}")
+        except (OSError, TimeoutError, NoSuchElementException, ValueError, TypeError) as e:
+            self.logger.error("Error scraping contact details: %s", type(e).__name__)
             
         return contact_info
     
@@ -484,13 +438,13 @@ class VolunteerDataService:
                 'access_methods': [
                     'Frontend scraping (visible volunteers)',
                     'API endpoint analysis (hidden volunteers)',
-                    'Strategic request posting (trigger responses)',
+                    'Strategic request posting disabled until routed through the reviewed outreach ledger',
                     'Network request monitoring (data discovery)'
                 ]
             })
             
             return stats
             
-        except Exception as e:
-            self.logger.error(f"Error getting statistics: {str(e)}")
+        except (AttributeError, TypeError, ValueError) as e:
+            self.logger.error("Error getting statistics: %s", type(e).__name__)
             return {}
