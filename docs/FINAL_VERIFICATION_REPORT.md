@@ -4,7 +4,8 @@
 
 - Branch: `main`
 - Starting commit: `7f2da80`
-- Final commit: recorded after final commit/history rewrite
+- History-clean implementation commit: `4012023`
+- Final delivery commit: the commit containing this report
 - Supported Python: 3.10, 3.11, 3.12
 - Docker/deployment: not applicable; maintained product is a local Windows desktop application
 
@@ -12,9 +13,21 @@
 
 Fail-closed runtime configuration; reviewed candidate intake; campaign/draft lifecycle; exact-snapshot approval; assisted and bounded live delivery; atomic claims; response/follow-up/outcome tracking; privacy/export; verified backup/restore; explicit app-scoped Drive upload; diagnostics; safety stop; reconciliation; support bundle; migrations/health; CI/security gates; operator/security/traceability documentation.
 
-## Verification Commands
+## Verification Results
 
-Final command outputs and commit IDs are inserted after the history rewrite and fresh-clone run. Required checks are:
+An isolated `--no-local` clone of rewritten commit `4012023` was installed into a new Python 3.12.13 virtual environment from `requirements-dev.txt`. Results:
+
+- Repository safety, including all reachable history: passed.
+- Compilation: passed.
+- Tests: 105 passed in 32.08 seconds.
+- Local critical path: passed; no network used, no external message sent, export count 1, backup verified, database ready.
+- `pip check`: no broken requirements.
+- Runtime dependency audit: no known vulnerabilities.
+- Development dependency audit: no known vulnerabilities.
+- Desktop construction smoke: `MainApplication` rendered the dashboard with all 15 navigation items; logical 1200x840 window rendered at 1800x1260 under local 150% scaling.
+- Startup guard: the launcher rejected the unsupported machine-default Python 3.14 as designed.
+
+Commands:
 
 ```powershell
 python scripts/check_repository_safety.py --history
@@ -31,7 +44,7 @@ CI additionally runs Python 3.10-3.12 and CodeQL. A fresh clone must pass safety
 
 ## Credentials and Runtime Data
 
-Active and reachable history must contain no committed OAuth files, token files, runtime databases/logs/backups, or packaged `dist/` tree. The removed historical Google OAuth client and refresh token remain compromised until the owner revokes/rotates them; history rewriting is not revocation.
+Active and reachable history contains no committed OAuth files, token files, runtime databases/logs/backups, or packaged `dist/` tree. The rewrite removed root, packaged, `google_drive/`, and `google-drive/` credential/token paths. The removed historical Google OAuth client and refresh token remain compromised until the owner revokes/rotates them; history rewriting is not revocation.
 
 ## Blocked External Evidence
 
