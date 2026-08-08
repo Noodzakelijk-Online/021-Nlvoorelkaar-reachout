@@ -28,6 +28,7 @@ An isolated `--no-local` clone of rewritten commit `4012023` was installed into 
 - Desktop construction smoke: `MainApplication` rendered the dashboard with all 15 navigation items; logical 1200x840 window rendered at 1800x1260 under local 150% scaling.
 - Startup guard: the launcher rejected the unsupported machine-default Python 3.14 as designed.
 - CodeQL remediation: all insecure `mktemp` calls were replaced with `mkstemp` plus cleanup, and regex HTML stripping was replaced with structured parsing plus active-content regression coverage.
+- GitHub security state: zero open Dependabot alerts and zero open CodeQL alerts; secret scanning, push protection, and Dependabot security updates enabled.
 
 Commands:
 
@@ -47,6 +48,8 @@ CI additionally runs Python 3.10-3.12 and CodeQL. A fresh clone must pass safety
 ## Credentials and Runtime Data
 
 Active and reachable history contains no committed OAuth files, token files, runtime databases/logs/backups, or packaged `dist/` tree. The rewrite removed root, packaged, `google_drive/`, and `google-drive/` credential/token paths. The removed historical Google OAuth client and refresh token remain compromised until the owner revokes/rotates them; history rewriting is not revocation.
+
+GitHub retains 21 open secret alerts whose locations all resolve to pre-rewrite commits and are not ancestors of `main`. They are intentionally not dismissed: the underlying credentials were real, and only owner-side revocation/rotation can close the incident truthfully.
 
 ## Blocked External Evidence
 

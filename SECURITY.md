@@ -8,6 +8,8 @@ Report vulnerabilities privately to the repository owner. Include the affected p
 
 Google OAuth material was committed in repository history. Removing it from the active tree and rewriting Git history reduces exposure but does not revoke it. The Google Cloud owner must revoke the refresh token, delete or rotate the OAuth client secret, review account activity, and issue new private credentials before Drive use.
 
+GitHub secret scanning and push protection are enabled. Its historical alerts refer only to pre-rewrite commits that are no longer reachable; they remain open until the real Google credentials are revoked/rotated and must not be dismissed as false positives.
+
 ## Security Boundaries
 
 - External search, send, and Drive features are disabled by default.
