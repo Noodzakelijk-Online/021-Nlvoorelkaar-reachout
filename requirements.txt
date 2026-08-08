@@ -13,7 +13,7 @@ Pillow==12.3.0
 darkdetect==0.8.0
 selenium==4.27.1
 schedule==1.2.2
-matplotlib==3.9.2
+matplotlib==3.10.9
 pandas==2.2.3
 email-validator==2.2.0
 phonenumbers==8.13.50
