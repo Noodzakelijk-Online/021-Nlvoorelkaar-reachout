@@ -5,13 +5,11 @@ Improved reliability, error handling, and adaptive scraping strategies
 
 import requests
 import time
-import random
 import logging
 from bs4 import BeautifulSoup
 from typing import List, Dict, Optional, Any
 from urllib.parse import urljoin, urlparse
-import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -20,19 +18,17 @@ logger = logging.getLogger(__name__)
 class ScrapingConfig:
     """Configuration for scraping behavior"""
     base_url: str = "https://www.nlvoorelkaar.nl"
-    min_delay: float = 1.0
-    max_delay: float = 3.0
+    min_delay: float = 4.0
+    max_delay: float = 8.0
     max_retries: int = 3
     timeout: int = 30
-    user_agents: List[str] = None
+    user_agent: str = "NLvoorelkaar-Reachout/3.0 (operator-assisted; contact repository owner)"
     
     def __post_init__(self):
-        if self.user_agents is None:
-            self.user_agents = [
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            ]
+        if self.min_delay < 1 or self.max_delay < self.min_delay:
+            raise ValueError("Scraping delays must be conservative and max_delay must be >= min_delay")
+        if urlparse(self.base_url).scheme != "https":
+            raise ValueError("The provider base URL must use HTTPS")
 
 class EnhancedScraper:
     """Enhanced web scraper with improved reliability"""
@@ -56,11 +52,16 @@ class EnhancedScraper:
             'DNT': '1',
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
+            'User-Agent': self.config.user_agent,
         })
-        
-    def _get_random_user_agent(self) -> str:
-        """Get random user agent"""
-        return random.choice(self.config.user_agents)
+
+    def _validate_provider_url(self, url: str) -> str:
+        """Reject redirects or form actions that leave the provider origin."""
+        candidate = urlparse(urljoin(self.config.base_url, url))
+        provider = urlparse(self.config.base_url)
+        if candidate.scheme != "https" or candidate.netloc.lower() != provider.netloc.lower():
+            raise ValueError("Refusing request outside the configured NLvoorelkaar HTTPS origin")
+        return candidate.geturl()
         
     def _respect_rate_limit(self):
         """Implement intelligent rate limiting"""
@@ -68,7 +69,7 @@ class EnhancedScraper:
         time_since_last = current_time - self.last_request_time
         
         # Calculate delay based on recent failures
-        base_delay = random.uniform(self.config.min_delay, self.config.max_delay)
+        base_delay = self.config.min_delay
         failure_multiplier = 1 + (self.consecutive_failures * 0.5)
         delay = base_delay * failure_multiplier
         
@@ -81,13 +82,11 @@ class EnhancedScraper:
         
     def _make_request(self, url: str, method: str = 'GET', **kwargs) -> Optional[requests.Response]:
         """Make HTTP request with retry logic and error handling"""
+        url = self._validate_provider_url(url)
         self._respect_rate_limit()
         
         for attempt in range(self.config.max_retries):
             try:
-                # Rotate user agent
-                self.session.headers['User-Agent'] = self._get_random_user_agent()
-                
                 # Make request
                 response = self.session.request(
                     method=method,
@@ -121,7 +120,7 @@ class EnhancedScraper:
                 
             # Exponential backoff
             if attempt < self.config.max_retries - 1:
-                wait_time = (2 ** attempt) + random.uniform(0, 1)
+                wait_time = 2 ** attempt
                 time.sleep(wait_time)
                 
         self.consecutive_failures += 1
@@ -163,9 +162,7 @@ class EnhancedScraper:
             })
             
             # Submit login form
-            action_url = login_form.get('action', '/login')
-            if not action_url.startswith('http'):
-                action_url = urljoin(self.config.base_url, action_url)
+            action_url = self._validate_provider_url(login_form.get('action', '/login'))
                 
             response = self._make_request(
                 action_url,
@@ -206,7 +203,7 @@ class EnhancedScraper:
         try:
             volunteers = []
             page = 1
-            max_pages = 50  # Safety limit
+            max_pages = max(1, min(int(search_params.get("max_pages", 5)), 20))
             
             while page <= max_pages:
                 logger.info(f"Scraping volunteers page {page}")
@@ -241,6 +238,20 @@ class EnhancedScraper:
         except (AttributeError, TypeError, ValueError) as e:
             logger.error("Error searching volunteers: %s", type(e).__name__)
             return []
+
+    def search_volunteers_page(
+        self,
+        search_params: Dict[str, Any],
+        page: int,
+    ) -> List[Dict[str, Any]]:
+        """Fetch one bounded result page for cancellable background tasks."""
+        page = int(page)
+        if not 1 <= page <= 20:
+            raise ValueError("page must be between 1 and 20")
+        response = self._make_request(self._build_search_url(search_params, page))
+        if not response:
+            return []
+        return self._parse_volunteers_page(response.text)
             
     def _build_search_url(self, params: Dict[str, Any], page: int = 1) -> str:
         """Build search URL with parameters"""
@@ -478,9 +489,7 @@ class EnhancedScraper:
             form_data['content'] = message  # Alternative field name
             
             # Submit form
-            action_url = form.get('action', message_url)
-            if not action_url.startswith('http'):
-                action_url = urljoin(self.config.base_url, action_url)
+            action_url = self._validate_provider_url(form.get('action', message_url))
                 
             response = self._make_request(
                 action_url,
@@ -523,4 +532,3 @@ class EnhancedScraper:
                 'consecutive_failures': self.consecutive_failures,
                 'last_check': datetime.now().isoformat()
             }
-

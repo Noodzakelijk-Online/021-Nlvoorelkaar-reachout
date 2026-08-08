@@ -297,7 +297,7 @@ class TestCredentialAuditLogging(unittest.TestCase):
 
     @patch('main.EnhancedScraper')
     def test_new_credential_login_failure_is_audited_without_secrets(self, scraper_cls):
-        """New credential storage and failed login are audited without secret values."""
+        """Failed new credentials are audited but never persisted."""
         credential_manager = Mock()
         credential_manager.credentials_exist.return_value = False
         credential_manager.save_credentials.return_value = True
@@ -308,13 +308,9 @@ class TestCredentialAuditLogging(unittest.TestCase):
 
         self.assertFalse(app.login('new@example.test', 'new-password-value', 'new-master-password'))
 
-        credential_manager.save_credentials.assert_called_once_with(
-            'new@example.test',
-            'new-password-value',
-            'new-master-password'
-        )
+        credential_manager.save_credentials.assert_not_called()
         actions = [event['action'] for event in self.db.get_audit_events(entity_type='credentials', limit=20)]
-        self.assertIn('credentials_stored', actions)
+        self.assertNotIn('credentials_stored', actions)
         self.assertIn('login_failed', actions)
 
         payload = self._audit_payload()
@@ -2058,14 +2054,15 @@ class TestSchedulerService(unittest.TestCase):
         scheduler_service.schedule = fake_schedule
         try:
             service = SchedulerService(Mock())
-            self.assertEqual(service.update_task_schedule("daily_sync", "04:00"), True)
+            self.assertNotIn("daily_sync", service.scheduled_tasks)
+            self.assertEqual(service.update_task_schedule("daily_backup", "04:00"), True)
         finally:
             scheduler_service.schedule = original_schedule
 
-        self.assertTrue(any("daily_sync" in job.tags for job in fake_schedule.jobs))
+        self.assertTrue(any("daily_backup" in job.tags for job in fake_schedule.jobs))
 
-        self.assertIn("daily_sync", fake_schedule.clear_calls)
-        matching_jobs = [job for job in fake_schedule.jobs if "daily_sync" in job.tags]
+        self.assertIn("daily_backup", fake_schedule.clear_calls)
+        matching_jobs = [job for job in fake_schedule.jobs if "daily_backup" in job.tags]
         self.assertEqual(len(matching_jobs), 1)
 
     def test_retry_tasks_keep_retry_tag(self):
@@ -2078,7 +2075,7 @@ class TestSchedulerService(unittest.TestCase):
         scheduler_service.schedule = fake_schedule
         try:
             service = SchedulerService(Mock())
-            service._schedule_retry("daily_sync")
+            service._schedule_retry("daily_backup")
         finally:
             scheduler_service.schedule = original_schedule
 
@@ -2087,7 +2084,16 @@ class TestSchedulerService(unittest.TestCase):
             for job in fake_schedule.jobs
             for tag in job.tags
         }
-        self.assertIn("retry_daily_sync", retry_tags)
+        self.assertIn("retry_daily_backup", retry_tags)
+
+    def test_retired_provider_sync_fails_closed(self):
+        """The compatibility entry point must never perform autonomous sync."""
+        import asyncio
+        from services.scheduler_service import SchedulerService
+
+        service = SchedulerService(Mock())
+        with self.assertRaisesRegex(RuntimeError, "retired"):
+            asyncio.run(service._run_daily_sync())
 
 
 class TestErrorHandler(unittest.TestCase):
@@ -2281,4 +2287,3 @@ class TestBlacklistService(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
-

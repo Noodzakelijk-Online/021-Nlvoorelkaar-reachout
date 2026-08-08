@@ -22,6 +22,9 @@ from models.data_models import Volunteer, Campaign, Contact, VolunteerFilter
 from services.enhanced_scraper import EnhancedScraper, ScrapingConfig
 from services.async_task_manager import AsyncTaskManager, TaskWrappers
 from services.outreach_ledger import OutreachLedger
+from services.data_management import DataImporter
+from config.runtime import RuntimeSettings
+from google_drive.google_api_services import GoogleDriveManager
 from views.modern_ui import MainApplication, ProgressDialog, ResponseDialog
 import customtkinter as ctk
 
@@ -45,14 +48,17 @@ class EnhancedNLvoorelkaarApp:
     """Enhanced NLvoorelkaar application with all improvements"""
     
     def __init__(self):
+        self.runtime_settings = RuntimeSettings.from_environment()
         self.credential_manager = CredentialManager()
         self.backup_manager = BackupManager()
         self.database_manager = DatabaseManager()
-        self.outreach_ledger = OutreachLedger(self.database_manager)
+        self.outreach_ledger = OutreachLedger(self.database_manager, self.runtime_settings)
+        self.google_drive = GoogleDriveManager()
         self.scraper = None
         self.task_manager = AsyncTaskManager(max_concurrent_tasks=2)
         self.ui = None
         self.logged_in = False
+        self.safety_stop = threading.Event()
         
         # Setup task callbacks
         self.task_manager.add_progress_callback(self._on_task_progress)
@@ -143,29 +149,27 @@ class EnhancedNLvoorelkaarApp:
                     source=credential_source,
                     success=True
                 )
-            else:
-                # Save new credentials
-                if not self.credential_manager.save_credentials(username, password, master_password):
-                    self._audit_credential_event(
-                        "credentials_store_failed",
-                        source=credential_source,
-                        success=False,
-                        risk_level="high"
-                    )
-                    return False
-                self._audit_credential_event(
-                    "credentials_stored",
-                    source=credential_source,
-                    success=True,
-                    risk_level="high"
-                )
-                    
             # Initialize scraper
             config = ScrapingConfig()
             self.scraper = EnhancedScraper(config)
             
             # Attempt login
             if self.scraper.login(username, password):
+                if credential_source == "setup_dialog":
+                    if not self.credential_manager.save_credentials(username, password, master_password):
+                        self._audit_credential_event(
+                            "credentials_store_failed",
+                            source=credential_source,
+                            success=False,
+                            risk_level="high"
+                        )
+                        return False
+                    self._audit_credential_event(
+                        "credentials_stored",
+                        source=credential_source,
+                        success=True,
+                        risk_level="high"
+                    )
                 self.logged_in = True
                 logger.info("Login successful")
                 self._audit_credential_event(
@@ -203,6 +207,18 @@ class EnhancedNLvoorelkaarApp:
     def search_volunteers(self, search_params: Dict[str, Any]) -> str:
         """Start volunteer search task"""
         try:
+            if self.safety_stop.is_set():
+                raise RuntimeError("Safety stop is active. Clear it before starting provider work.")
+            if not self.runtime_settings.live_search_enabled:
+                raise RuntimeError(
+                    "Live NLvoorelkaar search is disabled. Set NLVE_LIVE_SEARCH_ENABLED=1 "
+                    "after confirming current platform terms, or import a reviewed CSV/JSON file."
+                )
+            if not self.logged_in or not self.scraper:
+                raise RuntimeError("Connect to NLvoorelkaar before starting a live search")
+            search_params = dict(search_params or {})
+            requested_pages = int(search_params.get("max_pages", self.runtime_settings.max_search_pages))
+            search_params["max_pages"] = min(requested_pages, self.runtime_settings.max_search_pages)
             task_id = self.task_manager.add_task(
                 name="Search Volunteers",
                 function=TaskWrappers.scrape_volunteers,
@@ -222,6 +238,15 @@ class EnhancedNLvoorelkaarApp:
     def send_campaign_messages(self, campaign_id: int, volunteer_ids: List[str]) -> str:
         """Start approved campaign message sending task"""
         try:
+            if self.safety_stop.is_set():
+                raise RuntimeError("Safety stop is active. Clear it before sending.")
+            if not self.runtime_settings.live_send_enabled:
+                raise RuntimeError(
+                    "Live sending is disabled. Review the approved draft, send it manually on "
+                    "NLvoorelkaar, then record delivery evidence in Send History."
+                )
+            if not self.logged_in or not self.scraper:
+                raise RuntimeError("Connect to NLvoorelkaar before starting a live send")
             approved_drafts = self.outreach_ledger.get_approved_drafts(campaign_id, volunteer_ids)
             if not approved_drafts:
                 raise ValueError(
@@ -299,8 +324,87 @@ class EnhancedNLvoorelkaarApp:
         return approval_id
 
     def get_message_review_queue(self) -> List[Dict[str, Any]]:
-        """Get drafts waiting for review."""
-        return self.outreach_ledger.get_review_queue()
+        """Get drafts requiring review, assisted sending, or retry decisions."""
+        drafts = self.database_manager.get_message_drafts(limit=200)
+        return [
+            draft for draft in drafts
+            if draft.get("status") in {"draft", "approved", "failed"}
+        ]
+
+    def import_volunteers(self, file_path: str) -> Dict[str, int]:
+        """Import operator-reviewed candidate data without provider automation."""
+        stats = DataImporter(self.database_manager.db_path).import_volunteers(file_path)
+        if self.ui:
+            self.ui.refresh_volunteers()
+            self.ui.refresh_dashboard()
+        return stats
+
+    def get_operational_status(self) -> Dict[str, Any]:
+        """Return non-secret readiness information for the operator UI and doctor command."""
+        return {
+            "runtime": self.runtime_settings.public_status(),
+            "nlvoorelkaar_connected": self.logged_in,
+            "safety_stop_active": self.safety_stop.is_set(),
+            "google_drive": self.google_drive.status(),
+            "database": self.database_manager.get_database_health(),
+            "pending_tasks": len(self.task_manager.get_pending_tasks()),
+            "running_tasks": len(self.task_manager.get_running_tasks()),
+        }
+
+    def activate_safety_stop(self, actor: str = "user") -> int:
+        """Block new provider actions and request cancellation of all queued/running tasks."""
+        self.safety_stop.set()
+        cancelled = 0
+        for task in self.task_manager.get_all_tasks():
+            if task.status.value in {"pending", "running", "paused"}:
+                cancelled += int(self.task_manager.cancel_task(task.id))
+        self.database_manager.record_audit_event(
+            "operator_control",
+            "safety_stop",
+            "safety_stop_activated",
+            actor=actor,
+            after_state={"cancelled_tasks": cancelled},
+            risk_level="high",
+        )
+        return cancelled
+
+    def clear_safety_stop(self, actor: str = "user") -> None:
+        """Allow new provider actions after an explicit operator decision."""
+        self.safety_stop.clear()
+        self.database_manager.record_audit_event(
+            "operator_control",
+            "safety_stop",
+            "safety_stop_cleared",
+            actor=actor,
+            risk_level="high",
+        )
+
+    def reconcile_ambiguous_sends(self, stale_minutes: int = 15) -> int:
+        """Mark stale in-flight sends as unknown/failed for human reconciliation."""
+        return self.database_manager.reconcile_ambiguous_send_attempts(stale_minutes, actor="user")
+
+    def backup_to_google_drive(self, interactive_authorization: bool = True) -> Dict[str, Any]:
+        """Create, verify, and explicitly upload one local backup to app-scoped Drive storage."""
+        if self.safety_stop.is_set():
+            raise RuntimeError("Safety stop is active. Clear it before uploading a backup.")
+        if not self.runtime_settings.google_drive_enabled:
+            raise RuntimeError("Google Drive is disabled. Set NLVE_GOOGLE_DRIVE_ENABLED=1 to opt in.")
+        status = self.google_drive.connect(interactive=interactive_authorization)
+        if not status.get("connected"):
+            raise RuntimeError("Google Drive authorization is required before upload")
+        backup_path = self.backup_manager.create_backup()
+        if not self.backup_manager.verify_backup(backup_path):
+            raise RuntimeError("Local backup verification failed; nothing was uploaded")
+        file_id = self.google_drive.upload_file(backup_path)
+        self.database_manager.record_audit_event(
+            "backup",
+            os.path.basename(backup_path),
+            "backup_uploaded_to_google_drive",
+            actor="user",
+            after_state={"file_id": file_id, "file_name": os.path.basename(backup_path)},
+            risk_level="high",
+        )
+        return {"local_path": backup_path, "drive_file_id": file_id}
 
     def get_campaign_readiness(self, campaign_id: int) -> Dict[str, Any]:
         """Get campaign readiness status."""
@@ -763,6 +867,7 @@ class EnhancedMainApplication(MainApplication):
         view_names = [view_name] if view_name else list(self.views.keys())
         refresh_methods = {
             "dashboard": "refresh_data",
+            "intake": "refresh_status",
             "campaigns": "refresh_campaigns",
             "messages": "refresh_messages",
             "volunteers": "refresh_volunteers",
@@ -775,6 +880,7 @@ class EnhancedMainApplication(MainApplication):
             "tasks": "refresh_items",
             "audit": "refresh_items",
             "privacy": "refresh_items",
+            "operations": "refresh_status",
         }
 
         for name in view_names:
@@ -784,6 +890,9 @@ class EnhancedMainApplication(MainApplication):
 
             if name == "dashboard":
                 view.data_callback = self.app_controller.get_dashboard_data
+            elif name == "intake":
+                view.action_callback = self.handle_intake_action
+                view.status_callback = self.get_operational_status
             elif name == "campaigns":
                 view.campaign_callback = self.handle_campaign_action
                 view.data_callback = self.get_campaign_data
@@ -818,6 +927,9 @@ class EnhancedMainApplication(MainApplication):
             elif name == "privacy":
                 view.data_callback = self.get_privacy_review_data
                 view.action_callback = self.handle_privacy_action
+            elif name == "operations":
+                view.data_callback = self.get_operational_status
+                view.action_callback = self.handle_operations_action
 
             refresh_method = refresh_methods.get(name)
             if refresh_method and hasattr(view, refresh_method):
@@ -908,6 +1020,51 @@ class EnhancedMainApplication(MainApplication):
         """Get one volunteer with operating ledger context."""
         return self.app_controller.get_volunteer_operating_profile(volunteer_id)
 
+    def get_operational_status(self) -> Dict[str, Any]:
+        """Get current non-secret provider and safety readiness."""
+        return self.app_controller.get_operational_status()
+
+    def handle_intake_action(self, action: str, data: Dict[str, Any]):
+        """Run an explicit live search or local candidate import."""
+        if action == "live_search":
+            task_id = self.app_controller.search_volunteers(data)
+            self.status_bar.set_status(f"Search task {task_id} started", "info")
+            return task_id
+        if action == "import":
+            stats = self.app_controller.import_volunteers(data.get("path", ""))
+            self.status_bar.set_status(
+                f"Imported {stats.get('imported', 0)} and updated {stats.get('updated', 0)} candidates",
+                "success",
+            )
+            return stats
+        raise ValueError(f"Unknown candidate intake action: {action}")
+
+    def handle_operations_action(self, action: str, data: Dict[str, Any]):
+        """Run explicit backup, recovery, and emergency actions."""
+        if action == "safety_stop":
+            cancelled = self.app_controller.activate_safety_stop()
+            self.status_bar.set_status(f"Safety stop active; {cancelled} task(s) cancelled", "error")
+            return {"cancelled_tasks": cancelled}
+        if action == "clear_stop":
+            self.app_controller.clear_safety_stop()
+            self.status_bar.set_status("Safety stop cleared", "warning")
+            return {"safety_stop_active": False}
+        if action == "local_backup":
+            task_id = self.app_controller.backup_data()
+            self.status_bar.set_status(f"Backup task {task_id} started", "info")
+            return {"task_id": task_id}
+        if action == "drive_backup":
+            result = self.app_controller.backup_to_google_drive(interactive_authorization=True)
+            self.status_bar.set_status("Verified backup uploaded to Google Drive", "success")
+            return result
+        if action == "reconcile_sends":
+            count = self.app_controller.reconcile_ambiguous_sends()
+            self.status_bar.set_status(f"Reconciled {count} ambiguous send(s)", "warning")
+            self.refresh_messages()
+            self.refresh_ledger_view("sends")
+            return {"reconciled": count}
+        raise ValueError(f"Unknown operations action: {action}")
+
     def handle_campaign_action(self, action: str, data: Dict[str, Any]):
         """Route campaign actions to the controller."""
         if action == "create":
@@ -930,6 +1087,17 @@ class EnhancedMainApplication(MainApplication):
             self.status_bar.set_status(f"Assessed {len(assessments)} volunteer match(es)", "success")
             self.refresh_campaigns()
             self.refresh_ledger_view("matches")
+        elif action == "send_approved":
+            campaign_id = data.get("campaign_id")
+            if not campaign_id:
+                return
+            approved = self.app_controller.outreach_ledger.get_approved_drafts(campaign_id)
+            task_id = self.app_controller.send_campaign_messages(
+                campaign_id,
+                [draft["volunteer_id"] for draft in approved],
+            )
+            self.status_bar.set_status(f"Approved send task {task_id} started", "warning")
+            self.refresh_campaigns()
 
     def get_message_review_data(self) -> List[Dict[str, Any]]:
         """Get drafts waiting for explicit approval."""
@@ -954,6 +1122,19 @@ class EnhancedMainApplication(MainApplication):
                 body=data.get("body")
             )
             self.status_bar.set_status(f"Draft {draft_id} updated", "success")
+        elif action == "confirm_manual_send":
+            dialog = ctk.CTkInputDialog(
+                text="Enter delivery evidence, such as the NLvoorelkaar conversation URL or sent timestamp:",
+                title="Confirm Manual Send",
+            )
+            evidence = (dialog.get_input() or "").strip()
+            if not evidence:
+                self.status_bar.set_status("Manual send confirmation cancelled; evidence is required", "warning")
+                return
+            self.app_controller.confirm_manual_send(draft_id, evidence)
+            self.status_bar.set_status(f"Draft {draft_id} manually confirmed sent", "success")
+            self.refresh_campaigns()
+            self.refresh_ledger_view("sends")
 
     def get_match_assessment_data(self) -> List[Dict[str, Any]]:
         """Get match assessments."""
@@ -1327,4 +1508,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

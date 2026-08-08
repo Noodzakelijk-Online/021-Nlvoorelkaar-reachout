@@ -9,6 +9,7 @@ import sqlite3
 import json
 import zipfile
 import re
+import tempfile
 from datetime import datetime, timedelta
 import logging
 from typing import Optional
@@ -17,8 +18,8 @@ logger = logging.getLogger(__name__)
 
 class BackupManager:
     def __init__(self, data_dir="data", backup_dir="backups"):
-        self.data_dir = data_dir
-        self.backup_dir = backup_dir
+        self.data_dir = os.path.abspath(data_dir)
+        self.backup_dir = os.path.abspath(backup_dir)
         self.max_backups = 30  # Keep 30 days of backups
         self.sensitive_name_fragments = (
             "credential",
@@ -59,7 +60,7 @@ class BackupManager:
                             if self._should_exclude_file(relative_path):
                                 excluded_files.append(relative_path)
                                 continue
-                            arcname = os.path.relpath(file_path, os.path.dirname(self.data_dir))
+                            arcname = os.path.join(os.path.basename(self.data_dir), relative_path)
                             backup_zip.write(file_path, arcname)
                             included_files.append(relative_path)
                             
@@ -67,7 +68,7 @@ class BackupManager:
                 metadata = {
                     "backup_date": datetime.now().isoformat(),
                     "version": "2.0",
-                    "data_dir": self.data_dir,
+                    "data_dir": os.path.basename(self.data_dir),
                     "included_files": included_files,
                     "excluded_files": excluded_files,
                     "exclusion_policy": "credential/token/session-like files are excluded from backups"
@@ -88,10 +89,11 @@ class BackupManager:
                 logger.error(f"Backup file not found: {backup_path}")
                 return False
                 
-            # Create backup of current data before restore
+            # A restore is destructive, so rollback evidence is mandatory.
             pre_restore_backup = self.create_backup("pre_restore_backup")
             if not pre_restore_backup:
-                logger.warning("Pre-restore backup could not be created before restore.")
+                logger.error("Restore aborted because the pre-restore backup failed")
+                return False
             
             with zipfile.ZipFile(backup_path, 'r') as backup_zip:
                 # Verify backup metadata
@@ -104,14 +106,26 @@ class BackupManager:
 
                 restore_root = os.path.dirname(self.data_dir)
                 os.makedirs(restore_root, exist_ok=True)
-                self._validate_zip_members(backup_zip, restore_root)
-                    
-                # Clear current data directory
-                if os.path.exists(self.data_dir):
-                    shutil.rmtree(self.data_dir)
-                    
-                # Extract backup
-                self._safe_extract(backup_zip, restore_root)
+                staging_root = tempfile.mkdtemp(prefix="nlve-restore-", dir=restore_root)
+                rollback_path = self.data_dir + ".restore-rollback"
+                try:
+                    self._safe_extract(backup_zip, staging_root)
+                    staged_data = os.path.join(staging_root, os.path.basename(self.data_dir))
+                    if not os.path.isdir(staged_data):
+                        raise ValueError("Backup does not contain the expected data directory")
+                    if os.path.exists(rollback_path):
+                        raise ValueError("A previous restore rollback directory still exists")
+                    if os.path.exists(self.data_dir):
+                        os.replace(self.data_dir, rollback_path)
+                    os.replace(staged_data, self.data_dir)
+                    if os.path.exists(rollback_path):
+                        shutil.rmtree(rollback_path)
+                except (OSError, ValueError, zipfile.BadZipFile):
+                    if not os.path.exists(self.data_dir) and os.path.exists(rollback_path):
+                        os.replace(rollback_path, self.data_dir)
+                    raise
+                finally:
+                    shutil.rmtree(staging_root, ignore_errors=True)
                 
             logger.info(f"Backup restored successfully from: {backup_path}")
             return True
@@ -238,10 +252,19 @@ class BackupManager:
     def _validate_zip_members(self, backup_zip: zipfile.ZipFile, target_dir: str):
         """Validate that all zip members stay inside the target directory."""
         target_root = os.path.abspath(target_dir)
+        total_size = 0
         for member in backup_zip.infolist():
             destination = os.path.abspath(os.path.join(target_root, member.filename))
             if not destination.startswith(target_root + os.sep) and destination != target_root:
                 raise ValueError(f"Unsafe backup member path: {member.filename}")
+            mode = (member.external_attr >> 16) & 0o170000
+            if mode == 0o120000:
+                raise ValueError(f"Symbolic links are not allowed in backups: {member.filename}")
+            total_size += member.file_size
+            if total_size > 2 * 1024 * 1024 * 1024:
+                raise ValueError("Backup expands beyond the 2 GiB safety limit")
+            if member.compress_size and member.file_size / member.compress_size > 1000:
+                raise ValueError(f"Suspicious compression ratio in backup member: {member.filename}")
             
     def export_data(self, export_path: str, format="json") -> bool:
         """Export volunteer data from the local SQLite database.
@@ -303,4 +326,3 @@ class BackupManager:
             )
         )
         return candidates[0]
-

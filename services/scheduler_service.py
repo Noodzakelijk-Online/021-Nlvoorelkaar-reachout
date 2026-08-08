@@ -1,6 +1,8 @@
-"""
-Scheduler Service
-Automated daily synchronization scheduler with monitoring and management
+"""Explicitly started scheduler for local maintenance and backup tasks.
+
+The former autonomous provider synchronization task is intentionally retired.
+Live provider actions belong to the review-gated application workflow and must
+never be triggered by this scheduler.
 """
 
 import asyncio
@@ -19,7 +21,7 @@ try:
 except ImportError:
     schedule = None
 
-from .sync_service import SyncService, SyncReport
+from .sync_service import SyncService
 
 class ScheduleStatus(Enum):
     STOPPED = "stopped"
@@ -66,9 +68,8 @@ class SchedulerService:
         self.scheduled_tasks = {}
         self.task_history = []
         
-        # Configuration
+        # Configuration. Starting the scheduler remains an explicit action.
         self.config = {
-            'daily_sync_time': '02:00',
             'maintenance_time': '03:00',
             'backup_time': '01:00',
             'max_retry_attempts': 3,
@@ -106,14 +107,6 @@ class SchedulerService:
         try:
             if not self._schedule_available():
                 return
-            # Daily synchronization task
-            self.add_scheduled_task(
-                task_id='daily_sync',
-                name='Daily Volunteer Database Synchronization',
-                schedule_time=self.config['daily_sync_time'],
-                function=self._run_daily_sync
-            )
-            
             # Daily maintenance task
             self.add_scheduled_task(
                 task_id='daily_maintenance',
@@ -400,22 +393,10 @@ class SchedulerService:
             return datetime.now() + timedelta(days=1)
     
     async def _run_daily_sync(self) -> bool:
-        """Execute daily synchronization"""
-        try:
-            self.logger.info("Starting daily synchronization task")
-            
-            sync_report = await self.sync_service.perform_daily_sync()
-            
-            if sync_report.success:
-                self.logger.info("Daily synchronization completed successfully")
-                return True
-            else:
-                self.logger.error("Daily synchronization failed")
-                return False
-                
-        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, sqlite3.DatabaseError) as e:
-            self.logger.error("Daily sync task error: %s", type(e).__name__)
-            return False
+        """Refuse the retired autonomous provider synchronization path."""
+        raise RuntimeError(
+            "Autonomous provider synchronization is retired; use reviewed candidate intake"
+        )
     
     def _run_daily_maintenance(self) -> bool:
         """Execute daily maintenance tasks"""

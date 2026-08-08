@@ -164,10 +164,13 @@ class CredentialManager:
         Store a service credential bundle.
 
         Existing UI flows use save_credentials(username, password, master_password).
-        Enhanced CLI flows pass a service name and a dictionary. For those flows,
-        use NLVE_MASTER_PASSWORD or the service name as a migration fallback.
+        Compatibility callers must also provide an explicit master password, either
+        as an argument or through NLVE_MASTER_PASSWORD.
         """
-        master = master_password or os.environ.get("NLVE_MASTER_PASSWORD") or service
+        master = master_password or os.environ.get("NLVE_MASTER_PASSWORD")
+        if not master:
+            logger.error("Refusing credential storage without an explicit master password")
+            return False
         username = credentials.get("username") or credentials.get("email") or credentials.get("user", "")
         password = credentials.get("password", "")
         payload = {
@@ -190,7 +193,10 @@ class CredentialManager:
 
     def get_credentials(self, service: str = "default", master_password: str = None) -> dict:
         """Compatibility helper for enhanced services."""
-        master = master_password or os.environ.get("NLVE_MASTER_PASSWORD") or service
+        master = master_password or os.environ.get("NLVE_MASTER_PASSWORD")
+        if not master:
+            logger.error("Refusing credential load without an explicit master password")
+            return {}
         credentials = self.load_credentials(master)
         if not credentials:
             return {}
@@ -200,4 +206,3 @@ class CredentialManager:
         result["username"] = credentials.get("username")
         result["password"] = credentials.get("password")
         return result
-

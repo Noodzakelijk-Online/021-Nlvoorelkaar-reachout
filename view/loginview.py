@@ -87,7 +87,7 @@ class LoginView(BaseView):
         return login_button
 
     def check_input(self, *args) -> None:
-        username = self.password.get()
+        username = self.username.get()
         password = self.password.get()
         if len(username) >= 3 and len(password) >= 3:
             self.login_button.configure(state="normal")
@@ -120,7 +120,6 @@ class LoginView(BaseView):
             self.username.set(self.saved_username)
             self.password.set(self.saved_password)
             self.remember_me_checkbox.select()
-            self.login()
 
         center_window(self.root_window)
 
@@ -145,4 +144,4 @@ class LoginView(BaseView):
         else:
             self.error_label.configure(text="Login failed, please try again.")
             self.error_label.grid()
-            logging.error(f"Failed login attempt with username: {self.username.get()}")
+            logging.error("Failed login attempt")

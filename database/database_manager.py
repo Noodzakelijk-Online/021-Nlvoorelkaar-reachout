@@ -15,6 +15,8 @@ from typing import List, Dict, Optional, Any
 logger = logging.getLogger(__name__)
 
 class DatabaseManager:
+    SCHEMA_VERSION = 3
+
     def __init__(self, db_path="data/nlvoorelkaar.db"):
         self.db_path = db_path
         self._ensure_db_dir()
@@ -28,8 +30,10 @@ class DatabaseManager:
             
     def get_connection(self) -> sqlite3.Connection:
         """Get database connection with row factory"""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=10)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA busy_timeout = 10000")
         return conn
         
     def init_database(self):
@@ -104,6 +108,14 @@ class DatabaseManager:
                         key TEXT PRIMARY KEY,
                         value TEXT,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+
+                conn.execute('''
+                    CREATE TABLE IF NOT EXISTS schema_migrations (
+                        version INTEGER PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')
 
@@ -407,6 +419,12 @@ class DatabaseManager:
                 self._ensure_column(conn, 'volunteers', 'archived_at', 'TIMESTAMP')
                 self._ensure_column(conn, 'volunteers', 'redacted_at', 'TIMESTAMP')
                 self._ensure_column(conn, 'volunteers', 'retention_notes', 'TEXT')
+
+                conn.execute(
+                    "INSERT OR IGNORE INTO schema_migrations(version, name) VALUES (?, ?)",
+                    (self.SCHEMA_VERSION, "operating_ledger_and_safety_controls")
+                )
+                conn.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
                 
                 conn.commit()
                 logger.info("Database initialized successfully")
@@ -648,6 +666,8 @@ class DatabaseManager:
         draft = self.get_message_draft(draft_id)
         if not draft:
             raise ValueError(f"Message draft {draft_id} not found")
+        if draft.get('status') not in {'draft', 'rejected', 'failed'}:
+            raise ValueError("Only draft, rejected, or failed messages can be approved")
 
         with closing(self.get_connection()) as conn:
             cursor = conn.execute('''
@@ -679,6 +699,8 @@ class DatabaseManager:
         draft = self.get_message_draft(draft_id)
         if not draft:
             raise ValueError(f"Message draft {draft_id} not found")
+        if draft.get('status') in {'sending', 'sent'}:
+            raise ValueError("A sending or sent message cannot be rejected")
 
         with closing(self.get_connection()) as conn:
             cursor = conn.execute('''
@@ -714,14 +736,28 @@ class DatabaseManager:
         retry_count: int = 0
     ) -> int:
         """Create a send-attempt record for an approved draft."""
-        draft = self.get_message_draft(draft_id)
-        if not draft:
-            raise ValueError(f"Message draft {draft_id} not found")
-        if draft.get('status') not in {'approved', 'sending', 'failed'}:
-            raise ValueError("Cannot send a message draft without approval")
-
         finished_at = datetime.now().isoformat() if status in {'sent', 'failed'} else None
         with closing(self.get_connection()) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            draft_row = conn.execute(
+                "SELECT * FROM message_drafts WHERE id = ?",
+                (draft_id,)
+            ).fetchone()
+            if not draft_row:
+                raise ValueError(f"Message draft {draft_id} not found")
+            draft = dict(draft_row)
+
+            if status == 'started':
+                claimed = conn.execute('''
+                    UPDATE message_drafts
+                    SET status = 'sending', updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ? AND status = 'approved'
+                ''', (draft_id,))
+                if claimed.rowcount != 1:
+                    raise ValueError("Draft is not approved or is already being sent")
+            elif draft.get('status') not in {'approved', 'sending', 'failed'}:
+                raise ValueError("Cannot record a send result without approval")
+
             cursor = conn.execute('''
                 INSERT INTO message_send_attempts
                 (message_draft_id, volunteer_id, campaign_id, status, finished_at,
@@ -738,11 +774,12 @@ class DatabaseManager:
                 delivery_evidence
             ))
             attempt_id = cursor.lastrowid
-            conn.execute('''
-                UPDATE message_drafts
-                SET status = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-            ''', ('sending' if status == 'started' else status, draft_id))
+            if status != 'started':
+                conn.execute('''
+                    UPDATE message_drafts
+                    SET status = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ''', (status, draft_id))
             conn.commit()
 
         self.record_audit_event(
@@ -820,6 +857,85 @@ class DatabaseManager:
             query += ' ORDER BY msa.created_at DESC LIMIT ?'
             params.append(limit)
             return [dict(row) for row in conn.execute(query, params).fetchall()]
+
+    def get_daily_sent_count(self) -> int:
+        """Return confirmed message sends recorded since local midnight."""
+        with closing(self.get_connection()) as conn:
+            row = conn.execute('''
+                SELECT COUNT(*)
+                FROM message_send_attempts
+                WHERE status = 'sent' AND datetime(created_at) >= datetime('now', 'localtime', 'start of day')
+            ''').fetchone()
+            return int(row[0])
+
+    def reconcile_ambiguous_send_attempts(
+        self,
+        stale_minutes: int = 15,
+        actor: str = "operator",
+    ) -> int:
+        """Fail stale in-flight sends without guessing whether the provider accepted them."""
+        stale_minutes = int(stale_minutes)
+        if not 1 <= stale_minutes <= 1440:
+            raise ValueError("stale_minutes must be between 1 and 1440")
+        threshold = f"-{stale_minutes} minutes"
+        with closing(self.get_connection()) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            rows = conn.execute('''
+                SELECT id, message_draft_id
+                FROM message_send_attempts
+                WHERE status = 'started'
+                  AND datetime(started_at) <= datetime('now', ?)
+            ''', (threshold,)).fetchall()
+            for row in rows:
+                conn.execute('''
+                    UPDATE message_send_attempts
+                    SET status = 'failed', finished_at = CURRENT_TIMESTAMP,
+                        error_message = 'external_outcome_unknown'
+                    WHERE id = ?
+                ''', (row['id'],))
+                conn.execute('''
+                    UPDATE message_drafts
+                    SET status = 'failed', updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ? AND status = 'sending'
+                ''', (row['message_draft_id'],))
+            conn.commit()
+
+        for row in rows:
+            self.record_audit_event(
+                "message_send_attempt",
+                row['id'],
+                "ambiguous_send_reconciled",
+                actor=actor,
+                after_state={
+                    "draft_id": row['message_draft_id'],
+                    "status": "failed",
+                    "reason": "external_outcome_unknown",
+                },
+                risk_level="high",
+            )
+        return len(rows)
+
+    def get_database_health(self) -> Dict[str, Any]:
+        """Return non-sensitive integrity and migration diagnostics."""
+        with closing(self.get_connection()) as conn:
+            integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+            foreign_key_issues = [dict(row) for row in conn.execute("PRAGMA foreign_key_check").fetchall()]
+            version = int(conn.execute("PRAGMA user_version").fetchone()[0])
+            table_count = int(conn.execute('''
+                SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'
+            ''').fetchone()[0])
+        return {
+            "integrity": integrity,
+            "foreign_key_issue_count": len(foreign_key_issues),
+            "schema_version": version,
+            "expected_schema_version": self.SCHEMA_VERSION,
+            "table_count": table_count,
+            "ready": (
+                integrity == "ok"
+                and not foreign_key_issues
+                and version == self.SCHEMA_VERSION
+            ),
+        }
 
     def confirm_manual_send(
         self,
@@ -2642,5 +2758,3 @@ class DatabaseManager:
         except (AttributeError, ValueError, RuntimeError, TypeError, sqlite3.DatabaseError, OSError) as e:
             logger.error("Failed to cleanup old data: %s", type(e).__name__)
             return False
-
-

@@ -1,70 +1,51 @@
-"""
-Setup script for Enhanced NLvoorelkaar Outreach Tool
-"""
+"""Package metadata for NLvoorelkaar Reachout."""
 
-from setuptools import setup, find_packages
-import os
+from pathlib import Path
 
-# Read README for long description
-with open("README.md", "r", encoding="utf-8") as fh:
-    long_description = fh.read()
+from setuptools import find_packages, setup
 
-# Read requirements
-with open("requirements.txt", "r", encoding="utf-8") as fh:
-    requirements = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
+from config.version import __version__
+
+
+ROOT = Path(__file__).parent
+requirements = [
+    line.strip()
+    for line in (ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines()
+    if line.strip() and not line.startswith("#")
+]
 
 setup(
-    name="nlvoorelkaar-enhanced",
-    version="2.0.0",
-    author="Enhanced Development Team",
-    author_email="support@nlvoorelkaar-tool.com",
-    description="Enhanced NLvoorelkaar volunteer outreach tool with modern UI and advanced features",
-    long_description=long_description,
+    name="nlvoorelkaar-reachout",
+    version=__version__,
+    author="Noodzakelijk Online",
+    description="Local-first, review-gated NLvoorelkaar outreach operations",
+    long_description=(ROOT / "README.md").read_text(encoding="utf-8"),
     long_description_content_type="text/markdown",
-    url="https://github.com/nlvoorelkaar-enhanced/tool",
+    url="https://github.com/Noodzakelijk-Online/021-Nlvoorelkaar-reachout",
     packages=find_packages(),
+    py_modules=["main", "nlve_cli", "run"],
     classifiers=[
-        "Development Status :: 5 - Production/Stable",
+        "Development Status :: 4 - Beta",
         "Intended Audience :: End Users/Desktop",
-        "Topic :: Communications :: Email",
-        "Topic :: Internet :: WWW/HTTP :: Browsers",
-        "License :: OSI Approved :: MIT License",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
-        "Operating System :: OS Independent",
+        "Programming Language :: Python :: 3.12",
+        "Operating System :: Microsoft :: Windows",
     ],
-    python_requires=">=3.8",
+    python_requires=">=3.10,<3.13",
     install_requires=requirements,
-    extras_require={
-        "dev": [
-            "pytest>=6.0",
-            "pytest-cov>=2.0",
-            "black>=21.0",
-            "flake8>=3.8",
-            "mypy>=0.800",
-        ],
-    },
     entry_points={
         "console_scripts": [
-            "nlvoorelkaar-enhanced=main:main",
+            "nlve=nlve_cli:main",
+            "nlve-gui=main:main",
         ],
     },
     include_package_data=True,
-    package_data={
-        "": ["*.md", "*.txt", "*.yml", "*.yaml"],
-    },
-    data_files=[
-        ("", ["README.md", "requirements.txt"]),
-    ],
     zip_safe=False,
-    keywords="nlvoorelkaar volunteer outreach automation scraping",
+    keywords="volunteer outreach review approval privacy local-first",
     project_urls={
-        "Bug Reports": "https://github.com/nlvoorelkaar-enhanced/tool/issues",
-        "Source": "https://github.com/nlvoorelkaar-enhanced/tool",
-        "Documentation": "https://github.com/nlvoorelkaar-enhanced/tool/wiki",
+        "Issues": "https://github.com/Noodzakelijk-Online/021-Nlvoorelkaar-reachout/issues",
+        "Source": "https://github.com/Noodzakelijk-Online/021-Nlvoorelkaar-reachout",
     },
 )
-

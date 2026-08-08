@@ -396,9 +396,12 @@ class DataImporter:
         total = len(rows)
         
         with closing(sqlite3.connect(self.db_path)) as conn:
+            available_columns = {
+                column[1] for column in conn.execute("PRAGMA table_info(volunteers)").fetchall()
+            }
             for idx, row in enumerate(rows):
                 try:
-                    result = self._import_volunteer_row(conn, row)
+                    result = self._import_volunteer_row(conn, row, available_columns)
                     stats[result] += 1
                 except (sqlite3.DatabaseError, KeyError, TypeError, ValueError) as e:
                     logger.error("Error importing row %s: %s", idx, type(e).__name__)
@@ -407,6 +410,18 @@ class DataImporter:
                 if on_progress:
                     on_progress(idx + 1, total)
             
+            audit_exists = conn.execute('''
+                SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'audit_events'
+            ''').fetchone()
+            if audit_exists:
+                conn.execute('''
+                    INSERT INTO audit_events
+                    (entity_type, entity_id, action, actor, after_state, risk_level)
+                    VALUES ('volunteers', ?, 'volunteers_imported', 'user', ?, 'high')
+                ''', (
+                    os.path.basename(file_path),
+                    json.dumps({"source_file": os.path.basename(file_path), **stats}, sort_keys=True),
+                ))
             conn.commit()
         
         logger.info(f"Import complete: {stats}")
@@ -415,13 +430,56 @@ class DataImporter:
     def _import_volunteer_row(
         self,
         conn: sqlite3.Connection,
-        row: Dict[str, Any]
+        row: Dict[str, Any],
+        available_columns: Optional[set] = None,
     ) -> str:
         """Import a single volunteer row"""
-        profile_id = row.get('profile_id', '').strip()
+        available_columns = available_columns or {
+            column[1] for column in conn.execute("PRAGMA table_info(volunteers)").fetchall()
+        }
+        id_column = 'volunteer_id' if 'volunteer_id' in available_columns else 'profile_id'
+        profile_id = str(row.get(id_column) or row.get('volunteer_id') or row.get('profile_id') or '').strip()
         
         if not profile_id:
             return 'skipped'
+
+        if id_column == 'volunteer_id':
+            existing = conn.execute(
+                'SELECT id FROM volunteers WHERE volunteer_id = ?',
+                (profile_id,)
+            ).fetchone()
+            if existing:
+                conn.execute('''
+                    UPDATE volunteers SET
+                        name = COALESCE(?, name),
+                        location = COALESCE(?, location),
+                        description = COALESCE(?, description),
+                        skills = COALESCE(?, skills),
+                        categories = COALESCE(?, categories),
+                        availability = COALESCE(?, availability),
+                        contact_info = COALESCE(?, contact_info),
+                        profile_url = COALESCE(?, profile_url),
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE volunteer_id = ?
+                      AND COALESCE(retention_status, 'active') != 'redacted'
+                ''', (
+                    row.get('name'), row.get('location'), row.get('description'),
+                    row.get('skills'), row.get('categories'), row.get('availability'),
+                    row.get('contact_info'), row.get('profile_url'), profile_id,
+                ))
+                return 'updated'
+
+            conn.execute('''
+                INSERT INTO volunteers
+                (volunteer_id, name, location, description, skills, categories,
+                 availability, contact_info, profile_url)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                profile_id, row.get('name'), row.get('location'), row.get('description'),
+                row.get('skills'), row.get('categories'), row.get('availability'),
+                row.get('contact_info'), row.get('profile_url'),
+            ))
+            return 'imported'
         
         now = datetime.now().isoformat()
         
@@ -923,4 +981,3 @@ class DataCleanup:
                     stats[f'{table}_count'] = 0
         
         return stats
-

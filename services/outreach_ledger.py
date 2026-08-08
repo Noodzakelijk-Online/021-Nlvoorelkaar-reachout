@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 from database.database_manager import DatabaseManager
 from models.data_models import Campaign, Volunteer
 from services.data_management import DataExporter, ExportConfig, ExportFormat
+from config.runtime import RuntimeSettings
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +22,13 @@ logger = logging.getLogger(__name__)
 class OutreachLedger:
     """Application service for review-gated volunteer outreach operations."""
 
-    def __init__(self, database_manager: DatabaseManager):
+    def __init__(
+        self,
+        database_manager: DatabaseManager,
+        runtime_settings: Optional[RuntimeSettings] = None,
+    ):
         self.db = database_manager
+        self.runtime_settings = runtime_settings or RuntimeSettings()
 
     def check_campaign_readiness(self, campaign_id: int) -> Dict[str, Any]:
         """Return whether a campaign has enough local state to safely operate."""
@@ -179,6 +185,18 @@ class OutreachLedger:
         cancellation_token=None
     ) -> Dict[str, int]:
         """Send only approved drafts and record deterministic attempt outcomes."""
+        if not draft_ids:
+            return {"sent_count": 0, "failed_count": 0, "total_count": 0}
+        if len(draft_ids) > self.runtime_settings.max_send_batch:
+            raise ValueError(
+                f"One send action is limited to {self.runtime_settings.max_send_batch} messages"
+            )
+        sent_today = self.db.get_daily_sent_count()
+        if sent_today + len(draft_ids) > self.runtime_settings.daily_send_limit:
+            raise ValueError(
+                f"Daily send limit of {self.runtime_settings.daily_send_limit} would be exceeded"
+            )
+
         sent_count = 0
         failed_count = 0
 
@@ -209,7 +227,18 @@ class OutreachLedger:
                     f"Sending approved draft {draft_id} for campaign {draft.get('campaign_id')}..."
                 )
 
-            attempt_id = self.db.record_send_attempt(draft_id, status="started")
+            try:
+                attempt_id = self.db.record_send_attempt(draft_id, status="started")
+            except ValueError:
+                failed_count += 1
+                self.db.record_audit_event(
+                    "message_draft",
+                    draft_id,
+                    "duplicate_or_stale_send_blocked",
+                    after_state={"status": self.db.get_message_draft(draft_id).get("status")},
+                    risk_level="high",
+                )
+                continue
             try:
                 success = scraper.send_message(
                     draft["volunteer_id"],

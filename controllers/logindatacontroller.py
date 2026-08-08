@@ -1,38 +1,38 @@
-import json
-import os
-from typing import Optional
-import getpass
-import hashlib
-import base64
-from cryptography.fernet import Fernet
+"""OS-keyring storage for the retired classic login view."""
+
+from typing import Optional, Tuple
+
+import keyring
+from keyring.errors import KeyringError, PasswordDeleteError
 
 from controllers.logindatacontrollerinterface import LoginDataControllerInterface
 
 
 class LoginDataController(LoginDataControllerInterface):
-    LOGIN_DATA_FILE = ".login_data"
-    KEY = base64.urlsafe_b64encode(hashlib.sha256(getpass.getuser().encode()).digest())
+    """Store remembered credentials in the operating-system credential vault."""
 
-    def __init__(self):
-        self.cipher_suite = Fernet(LoginDataController.KEY)
+    SERVICE = "NoodzakelijkOnline.NLvoorelkaarReachout"
+    USERNAME_KEY = "username"
+    PASSWORD_KEY = "password"
 
     def save_login_data(self, username: str, password: str) -> None:
-        encrypted_data = self.cipher_suite.encrypt(json.dumps({"username": username, "password": password}).encode())
-        with open(LoginDataController.LOGIN_DATA_FILE, "wb") as file:
-            file.write(encrypted_data)
+        if not username or not password:
+            raise ValueError("username and password are required")
+        keyring.set_password(self.SERVICE, self.USERNAME_KEY, username)
+        keyring.set_password(self.SERVICE, self.PASSWORD_KEY, password)
 
-    def load_login_data(self) -> (Optional[str], Optional[str]):
-        if os.path.exists(LoginDataController.LOGIN_DATA_FILE):
-            with open(LoginDataController.LOGIN_DATA_FILE, "rb") as file:
-                encrypted_data = file.read()
-            if encrypted_data:
-                decrypted_data = json.loads(self.cipher_suite.decrypt(encrypted_data).decode())
-                return decrypted_data["username"], decrypted_data["password"]
-            return None, None
-
-        else:
+    def load_login_data(self) -> Tuple[Optional[str], Optional[str]]:
+        try:
+            return (
+                keyring.get_password(self.SERVICE, self.USERNAME_KEY),
+                keyring.get_password(self.SERVICE, self.PASSWORD_KEY),
+            )
+        except KeyringError:
             return None, None
 
     def erase_login_data(self) -> None:
-        if os.path.exists(LoginDataController.LOGIN_DATA_FILE):
-            os.remove(LoginDataController.LOGIN_DATA_FILE)
+        for key in (self.USERNAME_KEY, self.PASSWORD_KEY):
+            try:
+                keyring.delete_password(self.SERVICE, key)
+            except (PasswordDeleteError, KeyringError):
+                pass

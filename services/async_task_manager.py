@@ -327,7 +327,7 @@ class TaskWrappers:
                 
             volunteers = []
             page = 1
-            max_pages = search_params.get('max_pages', 50)
+            max_pages = max(1, min(int(search_params.get('max_pages', 5)), 20))
             
             while page <= max_pages:
                 # Check for cancellation
@@ -405,4 +405,3 @@ class TaskWrappers:
         except (AttributeError, TypeError, RuntimeError, OSError) as e:
             logger.error("Error in backup_data task: %s", type(e).__name__)
             raise
-

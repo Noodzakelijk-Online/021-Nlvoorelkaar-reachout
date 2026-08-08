@@ -1,16 +1,25 @@
+"""Explicit, least-privilege Google Drive backup support.
+
+Constructing this class never opens a browser, refreshes a token, or changes
+remote state. The operator must call ``connect`` and then an upload method.
+"""
+
+from __future__ import annotations
+
 import csv
 import io
 import logging
+import mimetypes
 import os
-import time
+from typing import Any, Dict, Optional
 
-from google.auth.transport.requests import Request
 from google.auth.exceptions import RefreshError
+from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
+from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
+
 
 logger = logging.getLogger(__name__)
 
@@ -18,216 +27,216 @@ SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 TOKEN_PATH = os.environ.get("NLVE_GOOGLE_TOKEN_PATH", os.path.join(DATA_DIR, "google_token.json"))
-CLIENT_SECRET_PATH = os.environ.get("NLVE_GOOGLE_CLIENT_SECRET_PATH", os.path.join(DATA_DIR, "google_credentials.json"))
+CLIENT_SECRET_PATH = os.environ.get(
+    "NLVE_GOOGLE_CLIENT_SECRET_PATH",
+    os.path.join(DATA_DIR, "google_credentials.json"),
+)
 
 
 class GoogleDriveManager:
-    _instance = None
+    """Manage app-created Drive files after explicit operator authorization."""
 
-    def __new__(cls, *args, **kwargs):
-        if not cls._instance:
-            cls._instance = super(GoogleDriveManager, cls).__new__(cls, *args, **kwargs)
-            cls._instance._initialized = False
-        return cls._instance
+    def __init__(
+        self,
+        token_path: str = TOKEN_PATH,
+        client_secret_path: str = CLIENT_SECRET_PATH,
+        folder_name: str = "NLvoorelkaar Reachout Backups",
+    ) -> None:
+        self.token_path = os.path.abspath(token_path)
+        self.client_secret_path = os.path.abspath(client_secret_path)
+        self.folder_name = folder_name
+        self.creds: Optional[Credentials] = None
+        self.service = None
+        self.folder_id: Optional[str] = None
 
-    def __init__(self):
-        if self._initialized:
-            return
-        self._initialized = True
+    def status(self) -> Dict[str, Any]:
+        return {
+            "connected": bool(self.service and self.creds and self.creds.valid),
+            "client_secret_present": os.path.isfile(self.client_secret_path),
+            "token_present": os.path.isfile(self.token_path),
+            "scope": SCOPES[0],
+            "remote_changes": "Only explicit upload/download actions change or read Drive files.",
+        }
+
+    def connect(self, interactive: bool = False) -> Dict[str, Any]:
+        """Connect to Drive; browser consent is allowed only when explicitly requested."""
+        creds: Optional[Credentials] = None
+        if os.path.isfile(self.token_path):
+            try:
+                creds = Credentials.from_authorized_user_file(self.token_path, SCOPES)
+            except (OSError, ValueError, TypeError) as exc:
+                logger.warning("Google token could not be read: %s", type(exc).__name__)
+
+        if creds and creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+            except (RefreshError, OSError, RuntimeError, ValueError) as exc:
+                logger.warning("Google token refresh failed: %s", type(exc).__name__)
+                creds = None
+
+        if (not creds or not creds.valid) and interactive:
+            creds = self.get_new_credentials()
+
+        if not creds or not creds.valid:
+            self.creds = None
+            self.service = None
+            return self.status()
+
+        self.creds = creds
+        self.service = build("drive", "v3", cache_discovery=False, credentials=creds)
+        self._store_token(creds)
+        return self.status()
+
+    def disconnect(self) -> None:
+        """Drop the in-memory provider session without deleting local authorization."""
         self.creds = None
         self.service = None
-        self.file_id = None
         self.folder_id = None
-        self.setup()
 
-    def setup(self):
-        os.makedirs(DATA_DIR, exist_ok=True)
+    def revoke_local_token(self) -> bool:
+        """Delete only the local token; provider-side revocation remains an account action."""
+        self.disconnect()
+        if not os.path.exists(self.token_path):
+            return False
+        os.remove(self.token_path)
+        return True
 
-        if os.path.exists(TOKEN_PATH):
-            self.creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
-
-        if self.creds and self.creds.expired and self.creds.refresh_token:
-            try:
-                logger.info("Refreshing Google Drive token")
-                self.creds.refresh(Request())
-            except (RefreshError, OSError, RuntimeError, ValueError):
-                logger.warning("Failed to refresh Google Drive token: %s", e)
-                self.creds = None
-
-        if not self.creds or not self.creds.valid:
-            try:
-                self.creds = self.get_new_credentials()
-            except FileNotFoundError as e:
-                logger.warning("%s", e)
-                return
-
-        if self.creds:
-            with open(TOKEN_PATH, "w") as token:
-                token.write(self.creds.to_json())
-            try:
-                os.chmod(TOKEN_PATH, 0o600)
-            except OSError:
-                logger.debug("Could not set private permissions on %s", TOKEN_PATH)
-
+    def _store_token(self, creds: Credentials) -> None:
+        os.makedirs(os.path.dirname(self.token_path), mode=0o700, exist_ok=True)
+        with open(self.token_path, "w", encoding="utf-8") as token_file:
+            token_file.write(creds.to_json())
         try:
-            service = build("drive", "v3", cache_discovery=False, credentials=self.creds)
-            self.service = service
+            os.chmod(self.token_path, 0o600)
+        except OSError:
+            logger.debug("Could not set private token permissions on this platform")
 
-            folder_name = "nlvoorelkaar_data"
-
-            self.folder_id = self.get_folder_id_by_name(folder_name)
-
-            if not self.folder_id:
-                file_metadata = {
-                    'name': folder_name,
-                    'mimeType': 'application/vnd.google-apps.folder'
-                }
-                folder = self.service.files().create(body=file_metadata, fields='id').execute()
-                folder_id = folder.get('id')
-
-                self.folder_id = folder_id
-
-            files = ["contacts_date.csv", "reminder_data.csv", "chats_no_response.csv", "blacklisted_volunteers.csv"]
-            for file in files:
-                try:
-                    existing_file = self.find_file_by_name(file)
-                    if not existing_file:
-                        file_metadata = {"name": file, "parents": [self.folder_id]}
-                        self.service.files().create(body=file_metadata, fields="id").execute()
-                        time.sleep(1)
-                except HttpError as error:
-                    logger.error("Google Drive setup failed for %s: %s", file, error)
-
-        except (HttpError, OSError, ValueError, RuntimeError, RefreshError, KeyError) as e:
-            logger.error("Google Drive setup failed: %s", e)
-
-    def get_new_credentials(self):
-        if not os.path.exists(CLIENT_SECRET_PATH):
+    def get_new_credentials(self) -> Credentials:
+        if not os.path.isfile(self.client_secret_path):
             raise FileNotFoundError(
-                f"Google OAuth client secret not found. Place it at {CLIENT_SECRET_PATH} "
-                "or set NLVE_GOOGLE_CLIENT_SECRET_PATH."
+                f"Google OAuth client secret not found at {self.client_secret_path}. "
+                "Set NLVE_GOOGLE_CLIENT_SECRET_PATH to a private file."
             )
-        flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_PATH, SCOPES)
-        creds = flow.run_local_server(port=0)
-        return creds
+        flow = InstalledAppFlow.from_client_secrets_file(self.client_secret_path, SCOPES)
+        return flow.run_local_server(port=0)
 
-    def get_folder_id_by_name(self, folder_name):
-        query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder'"
-        results = self.service.files().list(q=query, spaces='drive', fields="files(id, name)").execute()
-        items = results.get('files', [])
-        if items:
-            return items[0].get('id')
-        return None
+    def _require_service(self):
+        if not self.service:
+            raise RuntimeError("Google Drive is not connected. Run an explicit connect action first.")
+        return self.service
 
-    def find_file_by_name(self, file_name):
+    @staticmethod
+    def _escape_query_value(value: str) -> str:
+        return value.replace("\\", "\\\\").replace("'", "\\'")
+
+    def get_folder_id_by_name(self, folder_name: str) -> Optional[str]:
+        service = self._require_service()
+        escaped = self._escape_query_value(folder_name)
+        query = (
+            f"name='{escaped}' and mimeType='application/vnd.google-apps.folder' "
+            "and trashed=false"
+        )
+        result = service.files().list(q=query, spaces="drive", fields="files(id,name)").execute()
+        files = result.get("files", [])
+        return files[0].get("id") if files else None
+
+    def _ensure_folder(self) -> str:
+        service = self._require_service()
+        if self.folder_id:
+            return self.folder_id
+        self.folder_id = self.get_folder_id_by_name(self.folder_name)
         if not self.folder_id:
-            logger.warning("Folder ID is not set for %s", file_name)
-            return None
-        query = f"name='{file_name}' and '{self.folder_id}' in parents"
-        results = self.service.files().list(q=query,
-                                                spaces='drive',
-                                                fields="files(id, name)").execute()
-        items = results.get('files', [])
-        if not items:
-            return None
-        else:
-            return items[0]
+            metadata = {
+                "name": self.folder_name,
+                "mimeType": "application/vnd.google-apps.folder",
+            }
+            created = service.files().create(body=metadata, fields="id").execute()
+            self.folder_id = created["id"]
+        return self.folder_id
 
-    def find_file_id_by_name(self, file_name):
-        if not self.folder_id:
-            logger.warning("Folder ID is not set for %s", file_name)
-            return None
-        query = f"name='{file_name}' and '{self.folder_id}' in parents"
-        results = self.service.files().list(q=query,
-                                            spaces='drive',
-                                            fields="files(id, name)").execute()
-        items = results.get('files', [])
-        if not items:
-            return None
-        else:
-            return items[0].get("id")
+    def find_file_by_name(self, file_name: str) -> Optional[Dict[str, str]]:
+        service = self._require_service()
+        folder_id = self._ensure_folder()
+        escaped = self._escape_query_value(os.path.basename(file_name))
+        query = f"name='{escaped}' and '{folder_id}' in parents and trashed=false"
+        result = service.files().list(q=query, spaces="drive", fields="files(id,name)").execute()
+        files = result.get("files", [])
+        return files[0] if files else None
 
-    def upload_file(self, local_file_path, drive_file_name):
-        file_metadata = {
-            "name": drive_file_name,
-            "parents": [self.folder_id]  # Specify the folder ID here
-        }
-        media_file = open(local_file_path, "rb")
-        media = MediaIoBaseUpload(media_file, mimetype="text/csv")
+    def find_file_id_by_name(self, file_name: str) -> Optional[str]:
+        found = self.find_file_by_name(file_name)
+        return found.get("id") if found else None
 
-        try:
-            existing_file = self.find_file_by_name(drive_file_name)
-            if existing_file:
-                self.file_id = existing_file.get("id")
-                file = self.service.files().update(fileId=self.file_id, media_body=media, body=file_metadata).execute()
-            else:
-                file = self.service.files().create(body=file_metadata, media_body=media, fields="id").execute()
-                self.file_id = file.get("id")
-        finally:
-            media_file.close()
+    def upload_file(self, local_file_path: str, drive_file_name: Optional[str] = None) -> str:
+        service = self._require_service()
+        source = os.path.abspath(local_file_path)
+        if not os.path.isfile(source):
+            raise FileNotFoundError(source)
+        remote_name = os.path.basename(drive_file_name or source)
+        mime_type = mimetypes.guess_type(remote_name)[0] or "application/octet-stream"
+        with open(source, "rb") as stream:
+            media = MediaIoBaseUpload(stream, mimetype=mime_type, resumable=True)
+            return self._upsert(remote_name, media)
 
-        return self.file_id
+    def upload_file_content(
+        self,
+        file_content: bytes,
+        drive_file_name: str,
+        mime_type: str = "text/csv",
+    ) -> Dict[str, str]:
+        media = MediaIoBaseUpload(io.BytesIO(file_content), mimetype=mime_type, resumable=True)
+        file_id = self._upsert(os.path.basename(drive_file_name), media)
+        return {"id": file_id, "name": os.path.basename(drive_file_name)}
 
-    def upload_file_content(self, file_content, drive_file_name):
-        media_body = MediaIoBaseUpload(io.BytesIO(file_content), mimetype='text/csv', resumable=True)
-        file_metadata = {
-            "name": drive_file_name,
-        }
+    def _upsert(self, remote_name: str, media: MediaIoBaseUpload) -> str:
+        service = self._require_service()
+        folder_id = self._ensure_folder()
+        existing = self.find_file_by_name(remote_name)
+        if existing:
+            updated = service.files().update(
+                fileId=existing["id"],
+                media_body=media,
+                fields="id",
+            ).execute()
+            return updated["id"]
+        created = service.files().create(
+            body={"name": remote_name, "parents": [folder_id]},
+            media_body=media,
+            fields="id",
+        ).execute()
+        return created["id"]
 
-        existing_file = self.find_file_by_name(drive_file_name)
-        if existing_file:
-            self.file_id = existing_file.get("id")
-            response = self.service.files().update(fileId=self.file_id, media_body=media_body,
-                                                   body=file_metadata).execute()
-        else:
-            response = self.service.files().create(body=file_metadata, media_body=media_body, fields="id").execute()
-            self.file_id = response.get("id")
-
-        return response
-
-    def download_file_content(self, file_id):
-        request = self.service.files().get_media(fileId=file_id)
-        fh = io.BytesIO()
-        downloader = MediaIoBaseDownload(fh, request)
-        done = False
-        while done is False:
-            status, done = downloader.next_chunk()
-        return fh.getvalue()
-
-    def download_file(self, file_id, local_file_path):
-        request = self.service.files().get_media(fileId=file_id)
-        fh = io.FileIO(local_file_path, "wb")
-        downloader = MediaIoBaseDownload(fh, request)
+    def download_file_content(self, file_id: str) -> bytes:
+        request = self._require_service().files().get_media(fileId=file_id)
+        output = io.BytesIO()
+        downloader = MediaIoBaseDownload(output, request)
         done = False
         while not done:
-            status, done = downloader.next_chunk()
-        fh.close()
+            _, done = downloader.next_chunk()
+        return output.getvalue()
 
-    def write_frequency_data(self, reminder_frequency, reminder_message):
-        file_name = "reminder_data.csv"
-        existing_file = self.find_file_by_name(file_name)
-        file_id = existing_file.get("id") if existing_file else None
+    def download_file(self, file_id: str, local_file_path: str) -> str:
+        destination = os.path.abspath(local_file_path)
+        os.makedirs(os.path.dirname(destination), exist_ok=True)
+        with open(destination, "wb") as output:
+            request = self._require_service().files().get_media(fileId=file_id)
+            downloader = MediaIoBaseDownload(output, request)
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+        return destination
 
-        with io.StringIO() as file_content:
-            writer = csv.writer(file_content)
-            writer.writerow([reminder_frequency, reminder_message])
-            file_content.seek(0)
-
-            if file_id:
-                self.upload_file_content(file_content.getvalue().encode('utf-8'), file_name)
-            else:
-                self.upload_file_content(file_content.getvalue().encode('utf-8'), file_name)
+    def write_frequency_data(self, reminder_frequency: str, reminder_message: str) -> Dict[str, str]:
+        with io.StringIO() as content:
+            csv.writer(content).writerow([reminder_frequency, reminder_message])
+            return self.upload_file_content(content.getvalue().encode("utf-8"), "reminder_data.csv")
 
     def read_frequency_data(self):
-        file_name = "reminder_data.csv"
-        existing_file = self.find_file_by_name(file_name)
-        file_id = existing_file.get("id") if existing_file else None
+        file_id = self.find_file_id_by_name("reminder_data.csv")
+        if not file_id:
+            return None, None
+        with io.StringIO(self.download_file_content(file_id).decode("utf-8")) as content:
+            row = next(csv.reader(content), None)
+        return (row[0], row[1]) if row and len(row) >= 2 else (None, None)
 
-        if file_id:
-            file_content = self.download_file_content(file_id)
-            with io.StringIO(file_content.decode('utf-8')) as file:
-                reader = csv.reader(file)
-                for row in reader:
-                    return row[0], row[1]
 
-        return None, None
+__all__ = ["GoogleDriveManager", "SCOPES"]

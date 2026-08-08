@@ -401,6 +401,202 @@ class DashboardView(ctk.CTkFrame):
         else:
             self.activity_text.insert("end", "No recent activity")
 
+
+class SearchWorkspaceView(ctk.CTkFrame):
+    """Operator-controlled live search and local candidate import."""
+
+    def __init__(self, parent, action_callback: Callable = None, status_callback: Callable = None):
+        super().__init__(parent)
+        self.action_callback = action_callback
+        self.status_callback = status_callback
+        self.grid_columnconfigure(0, weight=1)
+        self.setup_ui()
+        self.refresh_status()
+
+    def setup_ui(self):
+        header = ctk.CTkFrame(self)
+        header.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="ew")
+        header.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(header, text="Candidate Intake", font=ModernTheme.FONT_LARGE).grid(
+            row=0, column=0, padx=15, pady=15, sticky="w"
+        )
+        ctk.CTkButton(header, text="Refresh Status", command=self.refresh_status, width=120).grid(
+            row=0, column=1, padx=15, pady=15
+        )
+
+        form = ctk.CTkFrame(self)
+        form.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
+        form.grid_columnconfigure(1, weight=1)
+
+        fields = [
+            ("Location", "location", ""),
+            ("Categories", "categories", ""),
+            ("Distance (km)", "distance", "10"),
+            ("Maximum pages", "max_pages", "5"),
+        ]
+        self.entries = {}
+        for row, (label, key, default) in enumerate(fields):
+            ctk.CTkLabel(form, text=label, font=ModernTheme.FONT_SMALL).grid(
+                row=row, column=0, padx=15, pady=8, sticky="w"
+            )
+            entry = ctk.CTkEntry(form)
+            entry.grid(row=row, column=1, padx=15, pady=8, sticky="ew")
+            entry.insert(0, default)
+            self.entries[key] = entry
+
+        actions = ctk.CTkFrame(self)
+        actions.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
+        ctk.CTkButton(
+            actions,
+            text="Start Live Search",
+            command=self.start_search,
+            width=150,
+        ).pack(side="left", padx=10, pady=10)
+        ctk.CTkButton(
+            actions,
+            text="Import CSV / JSON",
+            command=self.import_candidates,
+            width=150,
+        ).pack(side="left", padx=10, pady=10)
+
+        self.status_text = ctk.CTkTextbox(self, height=180, font=ModernTheme.FONT_SMALL)
+        self.status_text.grid(row=3, column=0, padx=20, pady=(10, 20), sticky="nsew")
+        self.grid_rowconfigure(3, weight=1)
+
+    def refresh_status(self):
+        status = self.status_callback() if self.status_callback else {}
+        runtime = status.get("runtime") or {}
+        lines = [
+            f"Live search enabled: {runtime.get('live_search_enabled', False)}",
+            f"NLvoorelkaar connected: {status.get('nlvoorelkaar_connected', False)}",
+            f"Safety stop active: {status.get('safety_stop_active', False)}",
+            f"Maximum configured pages: {runtime.get('max_search_pages', 5)}",
+            "",
+            "Local CSV/JSON import does not contact NLvoorelkaar.",
+            "Live search requires explicit configuration and a connected account.",
+        ]
+        self.status_text.delete("1.0", "end")
+        self.status_text.insert("1.0", "\n".join(lines))
+
+    def start_search(self):
+        try:
+            categories = [
+                value.strip()
+                for value in self.entries["categories"].get().split(",")
+                if value.strip()
+            ]
+            payload = {
+                "location": self.entries["location"].get().strip(),
+                "categories": categories,
+                "distance": int(self.entries["distance"].get()),
+                "max_pages": int(self.entries["max_pages"].get()),
+            }
+            result = self.action_callback("live_search", payload) if self.action_callback else None
+            self._show_result(f"Search task started: {result}")
+        except (TypeError, ValueError, RuntimeError) as exc:
+            messagebox.showerror("Search not started", str(exc))
+        self.refresh_status()
+
+    def import_candidates(self):
+        path = filedialog.askopenfilename(
+            title="Import reviewed candidate data",
+            filetypes=[("Candidate data", "*.csv *.json"), ("CSV", "*.csv"), ("JSON", "*.json")],
+        )
+        if not path:
+            return
+        try:
+            result = self.action_callback("import", {"path": path}) if self.action_callback else None
+            self._show_result(f"Import completed: {result}")
+        except (OSError, TypeError, ValueError, RuntimeError) as exc:
+            messagebox.showerror("Import failed", str(exc))
+
+    def _show_result(self, message: str):
+        self.status_text.insert("end", f"\n{message}")
+
+
+class OperationsView(ctk.CTkFrame):
+    """Provider readiness, backup, recovery, and emergency controls."""
+
+    def __init__(self, parent, data_callback: Callable = None, action_callback: Callable = None):
+        super().__init__(parent)
+        self.data_callback = data_callback
+        self.action_callback = action_callback
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(2, weight=1)
+        self.setup_ui()
+        self.refresh_status()
+
+    def setup_ui(self):
+        header = ctk.CTkFrame(self)
+        header.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="ew")
+        header.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(header, text="Operations & Safety", font=ModernTheme.FONT_LARGE).grid(
+            row=0, column=0, padx=15, pady=15, sticky="w"
+        )
+        ctk.CTkButton(header, text="Refresh", command=self.refresh_status, width=100).grid(
+            row=0, column=1, padx=15, pady=15
+        )
+
+        controls = ctk.CTkFrame(self)
+        controls.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
+        buttons = [
+            ("Safety Stop", "safety_stop", ModernTheme.ERROR_COLOR),
+            ("Clear Stop", "clear_stop", ModernTheme.WARNING_COLOR),
+            ("Local Backup", "local_backup", ModernTheme.PRIMARY_COLOR),
+            ("Backup to Drive", "drive_backup", ModernTheme.PRIMARY_COLOR),
+            ("Reconcile Sends", "reconcile_sends", ModernTheme.SECONDARY_COLOR),
+        ]
+        for label, action, color in buttons:
+            ctk.CTkButton(
+                controls,
+                text=label,
+                command=lambda selected=action: self.run_action(selected),
+                fg_color=color,
+                width=130,
+            ).pack(side="left", padx=6, pady=10)
+
+        self.status_text = ctk.CTkTextbox(self, font=ModernTheme.FONT_SMALL)
+        self.status_text.grid(row=2, column=0, padx=20, pady=(10, 20), sticky="nsew")
+
+    def refresh_status(self):
+        status = self.data_callback() if self.data_callback else {}
+        runtime = status.get("runtime") or {}
+        drive = status.get("google_drive") or {}
+        database = status.get("database") or {}
+        lines = [
+            f"Environment: {runtime.get('environment', 'unknown')}",
+            f"Safety stop: {'ACTIVE' if status.get('safety_stop_active') else 'clear'}",
+            f"NLvoorelkaar connection: {'connected' if status.get('nlvoorelkaar_connected') else 'not connected'}",
+            f"Live search: {'enabled' if runtime.get('live_search_enabled') else 'disabled'}",
+            f"Live send: {'enabled' if runtime.get('live_send_enabled') else 'disabled; manual assist only'}",
+            f"Google Drive: {'connected' if drive.get('connected') else 'not connected'}",
+            f"Google Drive opt-in: {'enabled' if runtime.get('google_drive_enabled') else 'disabled'}",
+            f"Database integrity: {database.get('integrity', 'unknown')}",
+            f"Schema version: {database.get('schema_version', 'unknown')}",
+            f"Running tasks: {status.get('running_tasks', 0)}",
+            f"Pending tasks: {status.get('pending_tasks', 0)}",
+        ]
+        self.status_text.delete("1.0", "end")
+        self.status_text.insert("1.0", "\n".join(lines))
+
+    def run_action(self, action: str):
+        if action == "safety_stop" and not messagebox.askyesno(
+            "Activate safety stop",
+            "Block new provider actions and request cancellation of active tasks?",
+        ):
+            return
+        if action == "drive_backup" and not messagebox.askyesno(
+            "Upload backup",
+            "Create a verified local backup and upload it to the app's Google Drive folder?",
+        ):
+            return
+        try:
+            result = self.action_callback(action, {}) if self.action_callback else None
+            self.refresh_status()
+            self.status_text.insert("end", f"\n\nAction result: {result}")
+        except (OSError, TypeError, ValueError, RuntimeError) as exc:
+            messagebox.showerror("Operation failed", str(exc))
+
 class CampaignView(ctk.CTkFrame):
     """Modern campaign management view"""
     
@@ -514,6 +710,16 @@ class CampaignView(ctk.CTkFrame):
             state="disabled"
         )
         self.assess_matches_button.pack(side="right", padx=8, pady=8)
+
+        self.send_approved_button = ctk.CTkButton(
+            action_frame,
+            text="Send Approved",
+            command=self.send_approved_for_selected,
+            width=130,
+            state="disabled",
+            fg_color=ModernTheme.WARNING_COLOR,
+        )
+        self.send_approved_button.pack(side="right", padx=8, pady=8)
         
     def create_new_campaign(self):
         """Open new campaign dialog"""
@@ -606,6 +812,7 @@ class CampaignView(ctk.CTkFrame):
             self.selected_campaign_id = None
             self.create_drafts_button.configure(state="disabled")
             self.assess_matches_button.configure(state="disabled")
+            self.send_approved_button.configure(state="disabled")
             self.details_text.insert("1.0", "Select a campaign to inspect readiness.")
             self.details_text.configure(state="disabled")
             return
@@ -682,6 +889,8 @@ class CampaignView(ctk.CTkFrame):
         button_state = "normal" if readiness.get("ready") else "disabled"
         self.create_drafts_button.configure(state=button_state)
         self.assess_matches_button.configure(state=button_state)
+        approved_count = int((readiness.get("draft_counts") or {}).get("approved", 0))
+        self.send_approved_button.configure(state="normal" if approved_count else "disabled")
 
     def format_operating_summary(self, summary: Dict[str, Any]) -> List[str]:
         """Format campaign ledger state for compact operator review."""
@@ -799,6 +1008,23 @@ class CampaignView(ctk.CTkFrame):
             return
         if self.campaign_callback:
             self.campaign_callback("assess_matches", {"campaign_id": self.selected_campaign_id})
+        self.refresh_campaigns()
+
+    def send_approved_for_selected(self):
+        """Request one bounded send batch after a final safety confirmation."""
+        if not self.selected_campaign_id:
+            return
+        if not messagebox.askyesno(
+            "Send approved messages",
+            "Send the approved message snapshots for this campaign now? "
+            "Live sending must be explicitly enabled; otherwise use the manual assist path.",
+        ):
+            return
+        try:
+            if self.campaign_callback:
+                self.campaign_callback("send_approved", {"campaign_id": self.selected_campaign_id})
+        except (AttributeError, TypeError, ValueError, RuntimeError) as exc:
+            messagebox.showerror("Messages not sent", str(exc))
         self.refresh_campaigns()
 
 class CampaignDialog(ctk.CTkToplevel):
@@ -1108,30 +1334,47 @@ class MessageReviewView(ctk.CTkFrame):
         button_frame = ctk.CTkFrame(item_frame)
         button_frame.grid(row=4, column=0, padx=12, pady=(6, 12), sticky="e")
 
-        save_button = ctk.CTkButton(
+        ctk.CTkButton(
             button_frame,
-            text="Save Edits",
-            command=lambda draft_id=draft['id'], subject=subject_entry, body=body_text: self.handle_edit(draft_id, subject, body),
-            width=110
-        )
-        save_button.pack(side="left", padx=5)
+            text="Copy Message",
+            command=lambda body=body_text: self.copy_message(body),
+            width=110,
+        ).pack(side="left", padx=5)
 
-        approve_button = ctk.CTkButton(
-            button_frame,
-            text="Approve",
-            command=lambda draft_id=draft['id']: self.handle_action("approve", draft_id),
-            width=100
-        )
-        approve_button.pack(side="left", padx=5)
+        status = draft.get("status", "draft")
+        if status in {"draft", "approved", "failed"}:
+            ctk.CTkButton(
+                button_frame,
+                text="Save Edits",
+                command=lambda draft_id=draft['id'], subject=subject_entry, body=body_text: self.handle_edit(draft_id, subject, body),
+                width=110,
+            ).pack(side="left", padx=5)
 
-        reject_button = ctk.CTkButton(
-            button_frame,
-            text="Reject",
-            command=lambda draft_id=draft['id']: self.handle_action("reject", draft_id),
-            width=100,
-            fg_color=ModernTheme.ERROR_COLOR
-        )
-        reject_button.pack(side="left", padx=5)
+        if status in {"draft", "failed"}:
+            ctk.CTkButton(
+                button_frame,
+                text="Approve",
+                command=lambda draft_id=draft['id']: self.handle_action("approve", draft_id),
+                width=100,
+            ).pack(side="left", padx=5)
+
+        if status == "approved":
+            ctk.CTkButton(
+                button_frame,
+                text="Confirm Manual Send",
+                command=lambda draft_id=draft['id']: self.handle_action("confirm_manual_send", draft_id),
+                width=150,
+                fg_color=ModernTheme.WARNING_COLOR,
+            ).pack(side="left", padx=5)
+
+        if status != "approved":
+            ctk.CTkButton(
+                button_frame,
+                text="Reject",
+                command=lambda draft_id=draft['id']: self.handle_action("reject", draft_id),
+                width=100,
+                fg_color=ModernTheme.ERROR_COLOR,
+            ).pack(side="left", padx=5)
 
     def handle_action(self, action: str, draft_id: int):
         """Handle approve/reject action."""
@@ -1148,6 +1391,12 @@ class MessageReviewView(ctk.CTkFrame):
                 "body": body_text.get("1.0", "end-1c")
             })
         self.refresh_messages()
+
+    def copy_message(self, body_text):
+        """Copy the exact reviewed message body for the assisted manual-send path."""
+        self.clipboard_clear()
+        self.clipboard_append(body_text.get("1.0", "end-1c"))
+        self.update_idletasks()
 
 class VolunteerDetailView(ctk.CTkFrame):
     """Volunteer profile and outreach ledger detail view."""
@@ -1840,8 +2089,8 @@ class MainApplication(ctk.CTk):
         super().__init__()
         
         self.title("NLvoorelkaar Outreach Tool - Enhanced")
-        self.geometry("1200x800")
-        self.minsize(1000, 600)
+        self.geometry("1200x840")
+        self.minsize(1000, 700)
         
         # Configure grid
         self.grid_columnconfigure(1, weight=1)
@@ -1852,8 +2101,9 @@ class MainApplication(ctk.CTk):
     def setup_ui(self):
         """Setup main application UI"""
         # Sidebar
-        self.sidebar = ctk.CTkFrame(self, width=200, corner_radius=0)
+        self.sidebar = ctk.CTkScrollableFrame(self, width=200, corner_radius=0)
         self.sidebar.grid(row=0, column=0, sticky="nsew")
+        self.sidebar.grid_columnconfigure(0, weight=1)
         
         # Logo/Title
         logo_label = ctk.CTkLabel(
@@ -1867,6 +2117,7 @@ class MainApplication(ctk.CTk):
         self.nav_buttons = {}
         nav_items = [
             ("Dashboard", "dashboard"),
+            ("Candidate Intake", "intake"),
             ("Campaigns", "campaigns"),
             ("Volunteers", "volunteers"),
             ("Matches", "matches"),
@@ -1879,19 +2130,17 @@ class MainApplication(ctk.CTk):
             ("Tasks", "tasks"),
             ("Audit", "audit"),
             ("Privacy", "privacy"),
-            ("Settings", "settings")
+            ("Operations", "operations")
         ]
-        self.sidebar.grid_rowconfigure(len(nav_items) + 1, weight=1)
-        
         for i, (text, key) in enumerate(nav_items, 1):
             button = ctk.CTkButton(
                 self.sidebar,
                 text=text,
                 command=lambda k=key: self.show_view(k),
                 width=160,
-                height=40
+                height=36
             )
-            button.grid(row=i, column=0, padx=20, pady=5)
+            button.grid(row=i, column=0, padx=20, pady=3)
             self.nav_buttons[key] = button
             
         # Status section
@@ -1907,8 +2156,8 @@ class MainApplication(ctk.CTk):
         
         self.connection_status = ctk.CTkLabel(
             status_frame,
-            text="● Connected",
-            text_color=ModernTheme.SUCCESS_COLOR,
+            text="Not connected",
+            text_color=ModernTheme.WARNING_COLOR,
             font=ModernTheme.FONT_SMALL
         )
         self.connection_status.pack(pady=5)
@@ -1942,6 +2191,12 @@ class MainApplication(ctk.CTk):
                 self.views[view_name] = DashboardView(
                     self.content_frame,
                     data_callback=self.get_dashboard_data
+                )
+            elif view_name == "intake":
+                self.views[view_name] = SearchWorkspaceView(
+                    self.content_frame,
+                    action_callback=self.handle_intake_action,
+                    status_callback=self.get_operational_status,
                 )
             elif view_name == "campaigns":
                 self.views[view_name] = CampaignView(
@@ -2045,13 +2300,14 @@ class MainApplication(ctk.CTk):
                     secondary_header_action_text="Export JSON",
                     secondary_header_action_name="export_json"
                 )
-            else:
-                # Placeholder for other views
-                self.views[view_name] = ctk.CTkLabel(
+            elif view_name == "operations":
+                self.views[view_name] = OperationsView(
                     self.content_frame,
-                    text=f"{view_name.title()} View\n(Coming Soon)",
-                    font=ModernTheme.FONT_LARGE
+                    data_callback=self.get_operational_status,
+                    action_callback=self.handle_operations_action,
                 )
+            else:
+                raise ValueError(f"Unknown view: {view_name}")
                 
         # Show selected view
         self.current_view = self.views[view_name]
@@ -2065,108 +2321,105 @@ class MainApplication(ctk.CTk):
                 button.configure(fg_color=ModernTheme.SECONDARY_COLOR)
                 
     def get_dashboard_data(self) -> Dict[str, Any]:
-        """Get data for dashboard (placeholder)"""
+        """Return a truthful disconnected state when no controller adapter is installed."""
         return {
-            'total_volunteers': 1234,
-            'total_contacts': 567,
-            'response_rate': 23.5,
-            'total_campaigns': 8,
-            'recent_activity': [
-                f"{datetime.now().strftime('%H:%M')} - Campaign 'Summer Volunteers' started",
-                f"{datetime.now().strftime('%H:%M')} - 15 new volunteers discovered",
-                f"{datetime.now().strftime('%H:%M')} - Message sent to volunteer #1234"
-            ]
+            'total_volunteers': 0,
+            'total_contacts': 0,
+            'response_rate': 0,
+            'total_campaigns': 0,
+            'recent_activity': ["No application controller is connected. Launch with python main.py."]
         }
         
     def handle_campaign_action(self, action: str, data: Dict[str, Any]):
-        """Handle campaign actions"""
-        if action == "create":
-            logger.info("Creating campaign from UI")
-            self.status_bar.set_status(f"Campaign '{data['name']}' created", "success")
+        """Refuse actions when this base view is launched without the real controller."""
+        raise RuntimeError("Campaign actions require the application controller. Launch with python main.py.")
+
+    def handle_intake_action(self, action: str, data: Dict[str, Any]):
+        raise RuntimeError("Candidate intake requires the application controller. Launch with python main.py.")
+
+    def get_operational_status(self) -> Dict[str, Any]:
+        return {"runtime": {}, "database": {}, "google_drive": {}, "controller_connected": False}
+
+    def handle_operations_action(self, action: str, data: Dict[str, Any]):
+        raise RuntimeError("Operational actions require the application controller. Launch with python main.py.")
 
     def get_campaign_data(self) -> List[Dict[str, Any]]:
-        """Get campaign data (placeholder for controller override)."""
+        """Controller adapter for campaign data."""
         return []
 
     def get_campaign_readiness(self, campaign_id: int) -> Dict[str, Any]:
-        """Get campaign readiness (placeholder for controller override)."""
+        """Controller adapter for campaign readiness."""
         return {"ready": False, "status": "unknown", "issues": [], "next_actions": []}
 
     def get_campaign_operating_summary(self, campaign_id: int) -> Dict[str, Any]:
-        """Get campaign operating summary (placeholder for controller override)."""
+        """Controller adapter for campaign operating summary."""
         return {}
 
     def get_message_review_data(self) -> List[Dict[str, Any]]:
-        """Get message review data (placeholder for controller override)."""
+        """Controller adapter for message review data."""
         return []
 
     def handle_message_action(self, action: str, data: Dict[str, Any]):
-        """Handle message review actions (placeholder for controller override)."""
-        logger.info("Message action requested: %s", action)
+        raise RuntimeError("Message actions require the application controller")
 
     def handle_response_action(self, action: str, data: Dict[str, Any]):
-        """Handle response actions (placeholder for controller override)."""
-        logger.info("Response action requested: %s", action)
+        raise RuntimeError("Response actions require the application controller")
 
     def get_match_assessment_data(self) -> List[Dict[str, Any]]:
-        """Get match assessment data (placeholder for controller override)."""
+        """Controller adapter for match assessment data."""
         return []
 
     def get_volunteer_data(self) -> List[Dict[str, Any]]:
-        """Get volunteer data (placeholder for controller override)."""
+        """Controller adapter for volunteer data."""
         return []
 
     def get_volunteer_detail_data(self, volunteer_id: str) -> Optional[Dict[str, Any]]:
-        """Get volunteer detail data (placeholder for controller override)."""
+        """Controller adapter for volunteer detail data."""
         return None
 
     def get_send_attempt_data(self) -> List[Dict[str, Any]]:
-        """Get send attempt data (placeholder for controller override)."""
+        """Controller adapter for send attempt data."""
         return []
 
     def handle_send_attempt_action(self, action: str, data: Dict[str, Any]):
-        """Handle send attempt actions (placeholder for controller override)."""
-        logger.info("Send attempt action requested: %s", action)
+        raise RuntimeError("Send-attempt actions require the application controller")
 
     def get_duplicate_identity_data(self) -> List[Dict[str, Any]]:
-        """Get duplicate identity data (placeholder for controller override)."""
+        """Controller adapter for duplicate identity data."""
         return []
 
     def handle_duplicate_action(self, action: str, data: Dict[str, Any]):
-        """Handle duplicate identity actions (placeholder for controller override)."""
-        logger.info("Duplicate action requested: %s", action)
+        raise RuntimeError("Duplicate actions require the application controller")
 
     def get_response_inbox_data(self) -> List[Dict[str, Any]]:
-        """Get response inbox data (placeholder for controller override)."""
+        """Controller adapter for response inbox data."""
         return []
 
     def get_follow_up_data(self) -> List[Dict[str, Any]]:
-        """Get follow-up data (placeholder for controller override)."""
+        """Controller adapter for follow-up data."""
         return []
 
     def get_audit_log_data(self) -> List[Dict[str, Any]]:
-        """Get audit log data (placeholder for controller override)."""
+        """Controller adapter for audit log data."""
         return []
 
     def get_task_run_data(self) -> List[Dict[str, Any]]:
-        """Get task run data (placeholder for controller override)."""
+        """Controller adapter for task run data."""
         return []
 
     def get_search_session_data(self) -> List[Dict[str, Any]]:
-        """Get search session data (placeholder for controller override)."""
+        """Controller adapter for search session data."""
         return []
 
     def get_privacy_review_data(self) -> List[Dict[str, Any]]:
-        """Get privacy review data (placeholder for controller override)."""
+        """Controller adapter for privacy review data."""
         return []
 
     def handle_follow_up_action(self, action: str, data: Dict[str, Any]):
-        """Handle follow-up actions (placeholder for controller override)."""
-        logger.info("Follow-up action requested: %s", action)
+        raise RuntimeError("Follow-up actions require the application controller")
 
     def handle_privacy_action(self, action: str, data: Dict[str, Any]):
-        """Handle privacy actions (placeholder for controller override)."""
-        logger.info("Privacy action requested: %s", action)
+        raise RuntimeError("Privacy actions require the application controller")
             
     def show_progress_dialog(self, title: str, message: str) -> ProgressDialog:
         """Show progress dialog"""
@@ -2183,4 +2436,3 @@ class MainApplication(ctk.CTk):
 if __name__ == "__main__":
     app = MainApplication()
     app.mainloop()
-

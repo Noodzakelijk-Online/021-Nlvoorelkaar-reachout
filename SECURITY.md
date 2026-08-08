@@ -1,20 +1,38 @@
-# Security
-
-## Secrets
-
-Do not commit OAuth client secrets, access tokens, refresh tokens, local databases, logs, or generated build output.
-
-Google Drive integration reads credentials from:
-
-- `NLVE_GOOGLE_CLIENT_SECRET_PATH`, or `data/google_credentials.json`
-- `NLVE_GOOGLE_TOKEN_PATH`, or `data/google_token.json`
-
-The committed Google OAuth client secret and refresh token that previously existed in this repository must be treated as compromised. Revoke the refresh token and rotate or delete the OAuth client in Google Cloud before using this project again.
-
-## Local Data
-
-Runtime data is stored under `data/` by default and is ignored by git. This data can contain volunteer profile data, contact history, message bodies, and OAuth tokens, so it should be backed up and deleted according to the operator's privacy obligations.
+# Security Policy
 
 ## Reporting
 
-Report vulnerabilities privately to the repository owner. Include the affected file, reproduction steps, impact, and any suggested remediation.
+Report vulnerabilities privately to the repository owner. Include the affected path, reproduction, impact, and remediation proposal. Do not place credentials, tokens, personal data, or message content in a public issue.
+
+## Compromised Historical Credentials
+
+Google OAuth material was committed in repository history. Removing it from the active tree and rewriting Git history reduces exposure but does not revoke it. The Google Cloud owner must revoke the refresh token, delete or rotate the OAuth client secret, review account activity, and issue new private credentials before Drive use.
+
+## Security Boundaries
+
+- External search, send, and Drive features are disabled by default.
+- Message sending requires a persisted draft, an exact approved snapshot, a bounded explicit action, and a durable attempt/audit record.
+- Manual sends require operator-entered evidence. The app never infers that a copied message was sent.
+- Stale in-flight sends become `external_outcome_unknown`; no automatic retry occurs.
+- Credentials are encrypted with an operator master password or stored in the OS credential vault. There is no service-name/default-password fallback.
+- Google Drive uses `drive.file` and never authenticates or writes remotely during object construction.
+- Backups reject traversal, symbolic links, excessive expansion, and credential/token/session files.
+- Support bundles contain aggregate diagnostics only.
+
+## Local Data
+
+Protect `data/`, `logs/`, `backups/`, and exports with OS account controls and encrypted storage. They can contain personal data. Use Privacy Review for retention proposals, export, archival, and redaction. Deletion/redaction actions require explicit operator action and are audited.
+
+## Release Gate
+
+Before release, run:
+
+```powershell
+python scripts\check_repository_safety.py --history
+python -m pytest -q
+python nlve_cli.py smoke
+python -m pip_audit -r requirements.txt
+python -m pip_audit -r requirements-dev.txt
+```
+
+Do not claim live-provider readiness until the provider/account acceptance items in `docs/FINAL_VERIFICATION_REPORT.md` are complete.

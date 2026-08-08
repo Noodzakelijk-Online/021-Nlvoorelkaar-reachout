@@ -262,7 +262,7 @@ class PerformanceManager:
         # Wait for rate limit
         self._rate_limiter.wait()
         
-        # Fetch from network (placeholder - implement actual fetch)
+        # The legacy network adapter is intentionally unavailable.
         volunteers = self._fetch_volunteers_from_network(page)
         
         # Cache result
@@ -433,17 +433,15 @@ class PerformanceManager:
             self.initialize()
     
     def _fetch_volunteers_from_network(self, page: int) -> list:
-        """Placeholder for actual network fetch"""
-        # This would be implemented with actual scraping logic
-        return []
+        """Refuse the retired network path instead of returning fake empty data."""
+        raise RuntimeError("Use the bounded Candidate Intake workflow for provider search")
     
     def _parse_volunteer_page(self, html: str) -> list:
-        """Placeholder for HTML parsing"""
-        # This would be implemented with BeautifulSoup
-        return []
+        """Refuse the retired parser path instead of returning fake empty data."""
+        raise RuntimeError("Use EnhancedScraper through the Candidate Intake workflow")
     
     def _send_message(self, message: dict) -> dict:
-        """Refuse placeholder success for external message delivery."""
+        """Refuse unreviewed external message delivery."""
         raise RuntimeError(
             "PerformanceManager direct message sending is disabled. Use OutreachLedger.send_approved_drafts "
             "so every external message has approval, send evidence, and audit history."
