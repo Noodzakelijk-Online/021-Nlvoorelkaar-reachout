@@ -18,6 +18,22 @@ from unittest.mock import Mock, patch, MagicMock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+def secure_temp_path(test_case, suffix):
+    """Create a non-racy temporary path and register best-effort cleanup."""
+    descriptor, path = tempfile.mkstemp(suffix=suffix)
+    os.close(descriptor)
+
+    def cleanup():
+        gc.collect()
+        try:
+            os.remove(path)
+        except (FileNotFoundError, PermissionError):
+            pass
+
+    test_case.addCleanup(cleanup)
+    return path
+
+
 class TestSecureCredentials(unittest.TestCase):
     """Test secure credential management"""
     
@@ -242,7 +258,7 @@ class TestCredentialAuditLogging(unittest.TestCase):
     """Test non-secret credential/session audit events on login."""
 
     def setUp(self):
-        self.temp_db = tempfile.mktemp(suffix='.db')
+        self.temp_db = secure_temp_path(self, '.db')
         from database.database_manager import DatabaseManager
 
         self.db = DatabaseManager(self.temp_db)
@@ -401,7 +417,7 @@ class TestMessageQueue(unittest.TestCase):
     """Test message queue system"""
     
     def setUp(self):
-        self.temp_db = tempfile.mktemp(suffix='.db')
+        self.temp_db = secure_temp_path(self, '.db')
     
     def tearDown(self):
         gc.collect()
@@ -459,7 +475,7 @@ class TestMessageSafety(unittest.TestCase):
     def test_message_queue_refuses_send_callbacks_and_processing(self):
         from services.message_queue import MessageQueue, MessageStatus
 
-        queue = MessageQueue(tempfile.mktemp(suffix='.db'))
+        queue = MessageQueue(secure_temp_path(self, '.db'))
         msg_id = queue.enqueue(recipient_id='vol_1', recipient_name='User', subject='Subject', body='Body')
         with self.assertRaisesRegex(RuntimeError, 'approval|approved|ledger'):
             queue.set_send_callback(Mock())
@@ -474,9 +490,9 @@ class TestMessageSafety(unittest.TestCase):
         from services.enhanced_messaging_service import EnhancedMessagingService, MessageScheduler
 
         with self.assertRaisesRegex(RuntimeError, 'approval|approved|ledger'):
-            EnhancedMessagingService(tempfile.mktemp(suffix='.db'), Mock())
+            EnhancedMessagingService(secure_temp_path(self, '.db'), Mock())
 
-        scheduler = MessageScheduler(tempfile.mktemp(suffix='.db'))
+        scheduler = MessageScheduler(secure_temp_path(self, '.db'))
         message_id = scheduler.schedule_message(
             recipient_id='vol_1',
             recipient_name='User',
@@ -672,7 +688,7 @@ class TestEnhancedVolunteerService(unittest.TestCase):
     """Test enhanced volunteer service"""
     
     def setUp(self):
-        self.temp_db = tempfile.mktemp(suffix='.db')
+        self.temp_db = secure_temp_path(self, '.db')
         self._init_db()
     
     def tearDown(self):
@@ -760,7 +776,7 @@ class TestEnhancedMessagingService(unittest.TestCase):
     """Test enhanced messaging service"""
     
     def setUp(self):
-        self.temp_db = tempfile.mktemp(suffix='.db')
+        self.temp_db = secure_temp_path(self, '.db')
     
     def tearDown(self):
         gc.collect()
@@ -799,7 +815,7 @@ class TestOutreachLedger(unittest.TestCase):
     """Test volunteer outreach operating ledger behavior."""
 
     def setUp(self):
-        self.temp_db = tempfile.mktemp(suffix='.db')
+        self.temp_db = secure_temp_path(self, '.db')
         from database.database_manager import DatabaseManager
         from services.outreach_ledger import OutreachLedger
 
@@ -1674,7 +1690,7 @@ class TestOutreachLedger(unittest.TestCase):
             actor='tester'
         )
 
-        output_path = tempfile.mktemp(suffix='.json')
+        output_path = secure_temp_path(self, '.json')
         try:
             result = self.ledger.export_volunteer_data(
                 output_path,
@@ -1817,7 +1833,7 @@ class TestDataExporter(unittest.TestCase):
     """Test data export functionality"""
     
     def setUp(self):
-        self.temp_db = tempfile.mktemp(suffix='.db')
+        self.temp_db = secure_temp_path(self, '.db')
         self.temp_dir = tempfile.mkdtemp()
         self._init_db()
     
@@ -1899,7 +1915,7 @@ class TestDataExporter(unittest.TestCase):
         from database.database_manager import DatabaseManager
         from services.data_management import DataExporter, ExportConfig, ExportFormat
 
-        current_db = tempfile.mktemp(suffix='.db')
+        current_db = secure_temp_path(self, '.db')
         try:
             db = DatabaseManager(current_db)
             db.add_volunteer({
@@ -1950,7 +1966,7 @@ class TestReportGenerator(unittest.TestCase):
     """Test report generation"""
     
     def setUp(self):
-        self.temp_db = tempfile.mktemp(suffix='.db')
+        self.temp_db = secure_temp_path(self, '.db')
         self._init_db()
     
     def tearDown(self):
@@ -2221,7 +2237,7 @@ class TestBlacklistService(unittest.TestCase):
     """Test blacklist service"""
     
     def setUp(self):
-        self.temp_db = tempfile.mktemp(suffix='.db')
+        self.temp_db = secure_temp_path(self, '.db')
         self._init_db()
     
     def tearDown(self):

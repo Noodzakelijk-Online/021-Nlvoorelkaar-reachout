@@ -20,12 +20,14 @@ An isolated `--no-local` clone of rewritten commit `4012023` was installed into 
 - Repository safety, including all reachable history: passed.
 - Compilation: passed.
 - Tests: 105 passed in 32.08 seconds.
+- Post-CodeQL remediation suite: 106 passed in 26.63 seconds.
 - Local critical path: passed; no network used, no external message sent, export count 1, backup verified, database ready.
 - `pip check`: no broken requirements.
 - Runtime dependency audit: no known vulnerabilities.
 - Development dependency audit: no known vulnerabilities.
 - Desktop construction smoke: `MainApplication` rendered the dashboard with all 15 navigation items; logical 1200x840 window rendered at 1800x1260 under local 150% scaling.
 - Startup guard: the launcher rejected the unsupported machine-default Python 3.14 as designed.
+- CodeQL remediation: all insecure `mktemp` calls were replaced with `mkstemp` plus cleanup, and regex HTML stripping was replaced with structured parsing plus active-content regression coverage.
 
 Commands:
 

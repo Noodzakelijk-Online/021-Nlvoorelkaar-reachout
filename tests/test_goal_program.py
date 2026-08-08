@@ -197,3 +197,16 @@ def test_local_critical_path_smoke_is_network_free():
     assert result["external_messages_sent"] == 0
     assert result["backup_verified"] is True
     assert result["database_ready"] is True
+
+
+def test_description_sanitizer_removes_active_content():
+    from utils.bug_fixes import InputValidator
+
+    value = InputValidator.sanitize_description(
+        '<p>Hello <strong>volunteer</strong></p><script>alert("secret")</script>'
+        '<style>body { display: none; }</style>'
+    )
+
+    assert value == "Hello volunteer"
+    assert "alert" not in value
+    assert "display" not in value

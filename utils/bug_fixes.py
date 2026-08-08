@@ -9,6 +9,7 @@ import unicodedata
 from typing import Optional, Dict, Any, List
 from urllib.parse import urlparse, urljoin
 import logging
+from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
@@ -88,11 +89,10 @@ class InputValidator:
         # Decode HTML entities
         description = html.unescape(description)
         
-        # Remove HTML tags
-        description = re.sub(r'<[^>]+>', '', description)
-        
-        # Remove script content
-        description = re.sub(r'<script[^>]*>.*?</script>', '', description, flags=re.DOTALL | re.IGNORECASE)
+        document = BeautifulSoup(description, "html.parser")
+        for unsafe_node in document(["script", "style"]):
+            unsafe_node.decompose()
+        description = document.get_text(" ")
         
         # Normalize whitespace
         description = re.sub(r'\s+', ' ', description)

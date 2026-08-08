@@ -11,6 +11,7 @@ All notable changes to this project are documented here.
 - Removed committed OAuth material and generated packaged builds from the active source tree.
 - Added repository secret/runtime-data checks and expanded CI security gates.
 - Updated cryptography, aiohttp, and Pillow to releases fixing the August 2026 advisory set.
+- Replaced insecure test temporary-file creation and regex-based HTML sanitization identified by CodeQL.
 
 ## 2.0.0
 
