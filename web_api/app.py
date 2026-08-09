@@ -297,16 +297,16 @@ def create_app(
     def hai_feed(limit: int = 100) -> dict[str, Any]:
         return application.hai_feed(limit=min(max(limit, 1), 500))
 
-    assets = Path(static_root) if static_root is not None else _static_root()
-    if assets.is_dir():
-        app.mount("/assets", StaticFiles(directory=assets / "assets"), name="assets")
+    assets = (Path(static_root) if static_root is not None else _static_root()).resolve()
+    index_file = (assets / "index.html").resolve()
+    asset_directory = (assets / "assets").resolve()
+    if assets.is_dir() and index_file.is_file() and asset_directory.is_dir():
+        app.mount("/assets", StaticFiles(directory=asset_directory), name="assets")
 
         @app.get("/{path:path}", include_in_schema=False)
         def spa(path: str):
-            candidate = (assets / path).resolve()
-            if path and candidate.is_file() and assets.resolve() in candidate.parents:
-                return FileResponse(candidate)
-            return FileResponse(assets / "index.html")
+            del path
+            return FileResponse(index_file)
     else:
         @app.get("/", include_in_schema=False)
         def frontend_missing():

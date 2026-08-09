@@ -191,3 +191,16 @@ def test_web_api_rejects_unsupported_message_status(tmp_path):
     )
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "invalid_operation"
+
+
+def test_spa_fallback_never_reads_a_request_derived_path(tmp_path):
+    service, _ = build_service(tmp_path)
+    static_root = tmp_path / "static"
+    (static_root / "assets").mkdir(parents=True)
+    (static_root / "index.html").write_text("safe-index", encoding="utf-8")
+    (tmp_path / "secret.txt").write_text("must-not-be-served", encoding="utf-8")
+    client = TestClient(create_app(service, api_token=TOKEN, static_root=static_root))
+
+    response = client.get("/..%2Fsecret.txt")
+    assert response.status_code == 200
+    assert response.text == "safe-index"
