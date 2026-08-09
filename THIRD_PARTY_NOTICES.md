@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Runtime and development dependencies are declared with exact versions in `requirements.txt` and `requirements-dev.txt`. Their upstream licenses govern those packages; this repository does not relicense them. Before binary distribution, generate and review an environment-specific software bill of materials and include all notices required by the packaged dependency set.
+Runtime, development, build, and frontend dependencies are declared with exact versions in `requirements.txt`, `requirements-dev.txt`, `requirements-build.txt`, and `web/package-lock.json`. Their upstream licenses govern those packages; this repository does not relicense them. The Windows release script generates an environment-specific CycloneDX software bill of materials. Review it and include all notices required by the packaged dependency set before distribution.
 
 External services are optional and separately governed:
 

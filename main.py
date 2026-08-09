@@ -75,11 +75,14 @@ class EnhancedNLvoorelkaarApp:
             # Initialize UI
             self.ui = EnhancedMainApplication(self)
             
-            # Check for existing credentials
-            if self.credential_manager.credentials_exist():
-                self.ui.show_login_dialog()
+            # Provider credentials are unnecessary for the complete local-assisted workflow.
+            if self.runtime_settings.live_search_enabled or self.runtime_settings.live_send_enabled:
+                if self.credential_manager.credentials_exist():
+                    self.ui.show_login_dialog()
+                else:
+                    self.ui.show_setup_dialog()
             else:
-                self.ui.show_setup_dialog()
+                self.ui.set_connection_status("Local-assisted mode", "info")
                 
             # Start UI main loop
             self.ui.mainloop()
@@ -130,6 +133,7 @@ class EnhancedNLvoorelkaarApp:
         """Login with credentials and record non-secret credential/session audit events."""
         credential_source = "stored_credentials" if self.credential_manager.credentials_exist() else "setup_dialog"
         try:
+            self.runtime_settings.require_provider_action("login")
             # Load credentials
             if credential_source == "stored_credentials":
                 self._audit_credential_event("credentials_load_requested", source=credential_source)
@@ -207,13 +211,14 @@ class EnhancedNLvoorelkaarApp:
     def search_volunteers(self, search_params: Dict[str, Any]) -> str:
         """Start volunteer search task"""
         try:
-            if self.safety_stop.is_set():
+            if self.safety_stop.is_set() or self.database_manager.get_runtime_control("safety_stop", False):
                 raise RuntimeError("Safety stop is active. Clear it before starting provider work.")
             if not self.runtime_settings.live_search_enabled:
                 raise RuntimeError(
                     "Live NLvoorelkaar search is disabled. Set NLVE_LIVE_SEARCH_ENABLED=1 "
                     "after confirming current platform terms, or import a reviewed CSV/JSON file."
                 )
+            self.runtime_settings.require_provider_action("search")
             if not self.logged_in or not self.scraper:
                 raise RuntimeError("Connect to NLvoorelkaar before starting a live search")
             search_params = dict(search_params or {})
@@ -238,13 +243,14 @@ class EnhancedNLvoorelkaarApp:
     def send_campaign_messages(self, campaign_id: int, volunteer_ids: List[str]) -> str:
         """Start approved campaign message sending task"""
         try:
-            if self.safety_stop.is_set():
+            if self.safety_stop.is_set() or self.database_manager.get_runtime_control("safety_stop", False):
                 raise RuntimeError("Safety stop is active. Clear it before sending.")
             if not self.runtime_settings.live_send_enabled:
                 raise RuntimeError(
                     "Live sending is disabled. Review the approved draft, send it manually on "
                     "NLvoorelkaar, then record delivery evidence in Send History."
                 )
+            self.runtime_settings.require_provider_action("send")
             if not self.logged_in or not self.scraper:
                 raise RuntimeError("Connect to NLvoorelkaar before starting a live send")
             approved_drafts = self.outreach_ledger.get_approved_drafts(campaign_id, volunteer_ids)
@@ -344,7 +350,10 @@ class EnhancedNLvoorelkaarApp:
         return {
             "runtime": self.runtime_settings.public_status(),
             "nlvoorelkaar_connected": self.logged_in,
-            "safety_stop_active": self.safety_stop.is_set(),
+            "safety_stop_active": bool(
+                self.safety_stop.is_set()
+                or self.database_manager.get_runtime_control("safety_stop", False)
+            ),
             "google_drive": self.google_drive.status(),
             "database": self.database_manager.get_database_health(),
             "pending_tasks": len(self.task_manager.get_pending_tasks()),
@@ -354,6 +363,7 @@ class EnhancedNLvoorelkaarApp:
     def activate_safety_stop(self, actor: str = "user") -> int:
         """Block new provider actions and request cancellation of all queued/running tasks."""
         self.safety_stop.set()
+        self.database_manager.set_runtime_control("safety_stop", True, actor=actor)
         cancelled = 0
         for task in self.task_manager.get_all_tasks():
             if task.status.value in {"pending", "running", "paused"}:
@@ -371,6 +381,7 @@ class EnhancedNLvoorelkaarApp:
     def clear_safety_stop(self, actor: str = "user") -> None:
         """Allow new provider actions after an explicit operator decision."""
         self.safety_stop.clear()
+        self.database_manager.set_runtime_control("safety_stop", False, actor=actor)
         self.database_manager.record_audit_event(
             "operator_control",
             "safety_stop",

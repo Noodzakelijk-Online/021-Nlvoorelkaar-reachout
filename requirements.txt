@@ -11,9 +11,10 @@ python-dateutil==2.9.0
 keyring==25.5.0
 Pillow==12.3.0
 darkdetect==0.8.0
-selenium==4.27.1
 schedule==1.2.2
-matplotlib==3.9.2
-pandas==2.2.3
 email-validator==2.2.0
 phonenumbers==8.13.50
+fastapi==0.141.1
+uvicorn==0.52.1
+pydantic==2.13.4
+python-multipart==0.0.32

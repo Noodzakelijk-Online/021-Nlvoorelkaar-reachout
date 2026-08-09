@@ -277,6 +277,8 @@ class TestCredentialAuditLogging(unittest.TestCase):
         app.scraper = None
         app.ui = None
         app.logged_in = False
+        app.runtime_settings = Mock()
+        app.runtime_settings.require_provider_action.return_value = None
         self.scraper = scraper
         return app
 

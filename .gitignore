@@ -33,6 +33,8 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+!nlvoorelkaar-reachout.spec
+artifacts/
 
 # Installer logs
 pip-log.txt
@@ -52,6 +54,12 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 .test-tmp-goal/
+.playwright-cli/
+output/
+node_modules/
+*.tsbuildinfo
+web/vite.config.js
+web/vite.config.d.ts
 
 # Translations
 *.mo
@@ -106,6 +114,7 @@ celerybeat.pid
 # Environments
 .env
 .venv
+.release-venv/
 env/
 venv/
 ENV/
@@ -146,6 +155,8 @@ credentials.json
 token.json
 client_secret*.json
 oauth*.json
+provider_approval*.json
+!config/provider_authorization.example.json
 *.key
 *.pem
 config.json

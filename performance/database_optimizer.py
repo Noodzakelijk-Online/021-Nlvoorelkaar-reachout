@@ -588,10 +588,10 @@ class QueryBuilder:
         if self._order:
             parts.append(f"ORDER BY {', '.join(self._order)}")
         
-        if self._limit:
+        if self._limit is not None:
             parts.append(f"LIMIT {self._limit}")
         
-        if self._offset:
+        if self._offset is not None:
             parts.append(f"OFFSET {self._offset}")
         
         query = ' '.join(parts)
@@ -625,10 +625,21 @@ class QueryBuilder:
     
     def paginate(self, page: int, per_page: int = 50) -> Dict[str, Any]:
         """Get paginated results"""
-        # Get total count
-        total = self.count()
-        
-        # Get page data
+        if page < 1:
+            raise ValueError("page must be at least 1")
+        if not 1 <= per_page <= 500:
+            raise ValueError("per_page must be between 1 and 500")
+        if not self._table:
+            raise ValueError("Table not specified")
+
+        count_parts = [f"SELECT COUNT(*) as count FROM {self._table}"]
+        if self._joins:
+            count_parts.extend(self._joins)
+        if self._where:
+            count_parts.append(f"WHERE {' AND '.join(self._where)}")
+        count_result = self.pool.execute(' '.join(count_parts), tuple(self._params))
+        total = count_result[0]['count'] if count_result else 0
+
         self._limit = per_page
         self._offset = (page - 1) * per_page
         data = self.get()

@@ -6,6 +6,8 @@ import os
 from dataclasses import dataclass
 from typing import Dict, List
 
+from services.provider_policy import validate_provider_authorization
+
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
 FALSE_VALUES = {"0", "false", "no", "off", ""}
@@ -39,6 +41,7 @@ class RuntimeSettings:
     live_search_enabled: bool = False
     live_send_enabled: bool = False
     google_drive_enabled: bool = False
+    provider_approval_path: str = ""
     max_search_pages: int = 5
     max_send_batch: int = 5
     daily_send_limit: int = 20
@@ -50,6 +53,7 @@ class RuntimeSettings:
             live_search_enabled=_env_bool("NLVE_LIVE_SEARCH_ENABLED"),
             live_send_enabled=_env_bool("NLVE_LIVE_SEND_ENABLED"),
             google_drive_enabled=_env_bool("NLVE_GOOGLE_DRIVE_ENABLED"),
+            provider_approval_path=os.environ.get("NLVE_PROVIDER_APPROVAL_PATH", "").strip(),
             max_search_pages=_env_int("NLVE_MAX_SEARCH_PAGES", 5, 1, 20),
             max_send_batch=_env_int("NLVE_MAX_SEND_BATCH", 5, 1, 20),
             daily_send_limit=_env_int("NLVE_DAILY_SEND_LIMIT", 20, 1, 100),
@@ -67,7 +71,38 @@ class RuntimeSettings:
             self.live_search_enabled or self.live_send_enabled or self.google_drive_enabled
         ):
             errors.append("External provider features cannot be enabled when NLVE_ENV=test")
+        if self.environment != "test" and (self.live_search_enabled or self.live_send_enabled):
+            required_actions = {"login"}
+            if self.live_search_enabled:
+                required_actions.add("search")
+            if self.live_send_enabled:
+                required_actions.add("send")
+            authorization = validate_provider_authorization(
+                self.provider_approval_path,
+                required_actions,
+            )
+            errors.extend(authorization.errors)
         return errors
+
+    def provider_authorization_status(self) -> Dict[str, object]:
+        """Return private-record readiness without exposing its path or evidence reference."""
+        required_actions = {"login"}
+        if self.live_search_enabled:
+            required_actions.add("search")
+        if self.live_send_enabled:
+            required_actions.add("send")
+        if not (self.live_search_enabled or self.live_send_enabled):
+            required_actions.clear()
+        return validate_provider_authorization(
+            self.provider_approval_path,
+            required_actions,
+        ).public_status()
+
+    def require_provider_action(self, action: str) -> None:
+        """Fail closed unless a current written approval covers one provider action."""
+        status = validate_provider_authorization(self.provider_approval_path, {action})
+        if not status.ready:
+            raise RuntimeError("Provider action is not authorized: " + "; ".join(status.errors))
 
     def public_status(self) -> Dict[str, object]:
         """Return non-secret configuration suitable for the UI and support bundles."""
@@ -76,8 +111,8 @@ class RuntimeSettings:
             "live_search_enabled": self.live_search_enabled,
             "live_send_enabled": self.live_send_enabled,
             "google_drive_enabled": self.google_drive_enabled,
+            "provider_authorization": self.provider_authorization_status(),
             "max_search_pages": self.max_search_pages,
             "max_send_batch": self.max_send_batch,
             "daily_send_limit": self.daily_send_limit,
         }
-

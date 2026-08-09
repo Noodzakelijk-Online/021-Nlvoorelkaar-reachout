@@ -17,6 +17,7 @@ from config.runtime import RuntimeSettings
 from database.database_manager import DatabaseManager
 from google_drive.google_api_services import GoogleDriveManager
 from services.outreach_ledger import OutreachLedger
+from services.provider_policy import validate_provider_authorization
 from utils.backup_manager import BackupManager
 from utils.credential_manager import CredentialManager
 
@@ -53,6 +54,26 @@ class ApplicationDoctor:
         except (TypeError, ValueError) as exc:
             settings = RuntimeSettings()
             checks.append(DiagnosticCheck("configuration", "fail", str(exc), "Correct the NLVE_* environment variables."))
+
+        provider_actions = []
+        if settings.live_search_enabled:
+            provider_actions.extend(("login", "search"))
+        if settings.live_send_enabled:
+            provider_actions.extend(("login", "send"))
+        provider_authorization = validate_provider_authorization(
+            settings.provider_approval_path,
+            provider_actions,
+        )
+        provider_enabled = bool(settings.live_search_enabled or settings.live_send_enabled)
+        checks.append(DiagnosticCheck(
+            "nlvoorelkaar_authorization",
+            "pass" if provider_enabled and provider_authorization.ready else "warning",
+            json.dumps(provider_authorization.public_status(), sort_keys=True),
+            (
+                "Keep live flags disabled and use reviewed imports/manual delivery, or provide a current "
+                "private written-approval record."
+            ) if not provider_authorization.ready else "",
+        ))
 
         for directory_name in ("data", "backups", "logs"):
             path = self.root / directory_name

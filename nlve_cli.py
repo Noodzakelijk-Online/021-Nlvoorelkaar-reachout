@@ -11,7 +11,9 @@ from database.database_manager import DatabaseManager
 from services.data_management import DataImporter
 from services.diagnostics import ApplicationDoctor, SupportBundleBuilder, verify_local_critical_path
 from services.outreach_ledger import OutreachLedger
+from services.provider_policy import approval_evidence_sha256, validate_provider_authorization
 from utils.backup_manager import BackupManager
+from connectors.hai_bridge import sync_feed
 
 
 def _print(payload) -> None:
@@ -39,6 +41,34 @@ def build_parser() -> argparse.ArgumentParser:
 
     support = subcommands.add_parser("support-bundle", help="Create a privacy-safe diagnostic ZIP")
     support.add_argument("path")
+
+    preflight = subcommands.add_parser(
+        "provider-preflight",
+        help="Validate a private written NLvoorelkaar approval record without network access",
+    )
+    preflight.add_argument("path")
+    preflight.add_argument(
+        "--action",
+        action="append",
+        choices=("login", "search", "send"),
+        default=[],
+        help="Required provider action; repeat for multiple actions",
+    )
+
+    evidence = subcommands.add_parser(
+        "hash-approval-evidence",
+        help="Compute the SHA-256 used by a private provider approval record",
+    )
+    evidence.add_argument("path")
+
+    serve = subcommands.add_parser("serve", help="Run the authenticated web application")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8765)
+
+    hai_sync = subcommands.add_parser("hai-sync", help="Write an authenticated HAI Generic JSON Feed")
+    hai_sync.add_argument("output")
+    hai_sync.add_argument("--url", default=os.environ.get("NLVE_API_URL", "http://127.0.0.1:8765"))
+    hai_sync.add_argument("--limit", type=int, default=100)
     return parser
 
 
@@ -53,6 +83,46 @@ def main(argv=None) -> int:
         return 0
     if args.command == "support-bundle":
         _print({"path": SupportBundleBuilder().create(args.path)})
+        return 0
+    if args.command == "provider-preflight":
+        result = validate_provider_authorization(
+            os.path.abspath(args.path),
+            args.action,
+        ).public_status()
+        _print(result)
+        return 0 if result["ready"] else 1
+    if args.command == "hash-approval-evidence":
+        _print({"sha256": approval_evidence_sha256(os.path.abspath(args.path))})
+        return 0
+    if args.command == "serve":
+        if args.host not in {"127.0.0.1", "localhost", "::1"} and os.environ.get(
+            "NLVE_WEB_ALLOW_NON_LOOPBACK", ""
+        ).strip().lower() not in {"1", "true", "yes", "on"}:
+            raise RuntimeError(
+                "Non-loopback binding is disabled. Keep the server on 127.0.0.1 and expose it through ngrok."
+            )
+        if not 1 <= args.port <= 65535:
+            raise ValueError("port must be between 1 and 65535")
+        import uvicorn
+
+        from web_api import create_app
+
+        uvicorn.run(
+            create_app(),
+            host=args.host,
+            port=args.port,
+            workers=1,
+            access_log=False,
+            server_header=False,
+        )
+        return 0
+    if args.command == "hai-sync":
+        _print(sync_feed(
+            args.url,
+            os.environ.get("NLVE_API_TOKEN", ""),
+            os.path.abspath(args.output),
+            args.limit,
+        ))
         return 0
 
     database = DatabaseManager()

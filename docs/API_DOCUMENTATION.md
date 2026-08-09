@@ -1,47 +1,56 @@
-# Application Service Reference
+# Web API Reference
 
-This is a local desktop application, not a network API. Its supported integration surface is Python application services plus the `nlve_cli.py` operator command.
+The FastAPI transport in `web_api/app.py` exposes the shared `ApplicationService` used by the operator web UI. It does not bypass review, Safety Stop, retention, or audit rules.
 
-## Runtime Configuration
+## Authentication and Errors
 
-`config.runtime.RuntimeSettings.from_environment()` validates external feature flags and bounded limits. Defaults disable live search, live send, and Google Drive.
+Set `NLVE_WEB_API_TOKEN` to a private random value of at least 32 characters. Every `/api/v1/*` request requires `Authorization: Bearer <token>`. `/healthz` is the only unauthenticated route. Interactive API documentation and the OpenAPI route are disabled.
 
-## Outreach Ledger
+Validation errors use HTTP 422. Invalid operations use 400, blocked state transitions use 409, oversized imports use 413, and request limits use 429. Application errors use:
 
-`services.outreach_ledger.OutreachLedger` owns the operating lifecycle:
-
-- `check_campaign_readiness(campaign_id)`
-- `create_message_drafts(campaign_id, volunteer_ids=None)`
-- `approve_message(draft_id, reason, actor)`
-- `send_approved_drafts(scraper, draft_ids)`
-- `confirm_manual_send(draft_id, delivery_evidence, actor)`
-- `record_response(...)`
-- `approve_follow_up(...)` and `confirm_follow_up_sent(...)`
-- `record_outreach_outcome(...)`
-- `export_volunteer_data(...)`
-
-External sending must go through this service. Direct and legacy send paths raise `RuntimeError`.
-
-## Database
-
-`database.database_manager.DatabaseManager` initializes additive schema version 3, enables SQLite foreign keys and busy timeouts, exposes integrity diagnostics, atomically claims approved drafts, and reconciles stale attempts without guessing provider outcomes.
-
-## Provider Adapters
-
-`services.enhanced_scraper.EnhancedScraper` performs bounded same-origin HTTPS requests with a transparent user agent and conservative delay. The controller feature gate must be enabled before it is used live.
-
-`google_drive.google_api_services.GoogleDriveManager` is side-effect free on construction. Call `connect(interactive=True)` only from an explicit operator action, then upload a verified backup. Scope is `drive.file`.
-
-## Operator CLI
-
-```text
-python run.py doctor
-python run.py smoke
-python run.py reconcile-sends --minutes 15
-python run.py import-volunteers PATH
-python run.py export-volunteers PATH --format json|csv
-python run.py backup --name NAME
-python run.py support-bundle PATH
+```json
+{"error":{"code":"operation_blocked","message":"Safety stop is active"}}
 ```
 
-All CLI commands except explicitly configured provider actions are local. The smoke command never uses the network or real credentials.
+## Read Routes
+
+| Method | Route | Purpose |
+|---|---|---|
+| GET | `/healthz` | Minimal tunnel/process health check |
+| GET | `/api/v1/status` | Runtime, database, provider authorization, HAI, and Safety Stop state |
+| GET | `/api/v1/dashboard` | Bounded operating summaries and recent queues |
+| GET | `/api/v1/volunteers?limit=100&offset=0` | Paginated candidate records |
+| GET | `/api/v1/campaigns` | Campaign list |
+| GET | `/api/v1/messages/review` | Drafts requiring review |
+| GET | `/api/v1/messages?message_status=approved` | Drafts in one validated state |
+| GET | `/api/v1/responses` | Recorded response inbox |
+| GET | `/api/v1/follow-ups` | Follow-up queue |
+| GET | `/api/v1/privacy/retention?days=365` | Stale-record review candidates |
+| GET | `/api/v1/hai/feed` | Privacy-minimized, read-only HAI feed |
+
+List routes enforce bounded limits of at most 500 records. Candidate import accepts reviewed CSV or JSON files up to 5 MiB.
+
+## Mutation Routes
+
+| Method | Route | Required body or evidence |
+|---|---|---|
+| POST | `/api/v1/volunteers/import` | Multipart `file` containing CSV or JSON |
+| POST | `/api/v1/campaigns` | Campaign fields and message template |
+| POST | `/api/v1/campaigns/{id}/drafts` | Optional bounded `volunteer_ids` list |
+| POST | `/api/v1/messages/{id}/approve` | Non-empty review `reason` |
+| POST | `/api/v1/messages/{id}/reject` | Non-empty review `reason` |
+| POST | `/api/v1/messages/{id}/confirm-manual-send` | Operator-observed delivery `evidence` |
+| POST | `/api/v1/responses` | Volunteer ID, campaign ID, and response content |
+| POST | `/api/v1/follow-ups/{id}/approve` | Uses the persisted suggested message snapshot |
+| POST | `/api/v1/follow-ups/{id}/confirm-manual-send` | Operator-observed delivery `evidence` |
+| POST | `/api/v1/privacy/retention/{id}/archive` | Explicit decision `reason` |
+| POST | `/api/v1/privacy/retention/{id}/redact` | Explicit decision `reason` |
+| PUT | `/api/v1/operations/safety-stop` | `{"active": true}` or `false` |
+
+The API cannot claim a provider send from inference. Manual send and follow-up completion require operator-entered evidence and are blocked while durable Safety Stop is active.
+
+## Service and Database
+
+`services.application_service.ApplicationService` is the transport-independent boundary. `services.outreach_ledger.OutreachLedger` owns approvals, send attempts, responses, follow-ups, privacy actions, and HAI projection. `DatabaseManager` initializes additive schema version 4, uses SQLite foreign keys and busy timeouts, and performs bounded pagination in SQL.
+
+All external provider actions must pass `RuntimeSettings.require_provider_action`. A live action remains disabled unless both its feature flag and a valid private written-approval record authorize that exact action.

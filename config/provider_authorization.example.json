@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "provider": "nlvoorelkaar",
+  "authorization_type": "written_platform_approval",
+  "approved_by": "REPLACE WITH PLATFORM APPROVER",
+  "approval_reference": "REPLACE WITH TICKET OR EMAIL REFERENCE",
+  "evidence_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "approved_actions": [
+    "login",
+    "search",
+    "send"
+  ],
+  "terms_url": "https://www.nlvoorelkaar.nl/helpcentrum/artikel/209596769",
+  "terms_version": "2025-12-15",
+  "terms_checked_at": "YYYY-MM-DD",
+  "expires_at": "YYYY-MM-DD",
+  "acknowledgements": {
+    "personal_account_only": true,
+    "intended_use_only": true,
+    "no_credential_sharing": true,
+    "bounded_rate_limits": true,
+    "personal_data_protected": true
+  }
+}

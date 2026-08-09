@@ -435,7 +435,7 @@ class OutreachLedger:
 
     def get_volunteers(self, limit: int = 500) -> List[Dict[str, Any]]:
         """Return volunteers for local review."""
-        return self.db.get_volunteers()[:limit]
+        return self.db.get_volunteers(limit=limit)
 
     def get_volunteer_operating_profile(self, volunteer_id: str) -> Optional[Dict[str, Any]]:
         """Return one volunteer with contact, response, match, follow-up, and duplicate context."""

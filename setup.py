@@ -1,13 +1,13 @@
 """Package metadata for NLvoorelkaar Reachout."""
 
 from pathlib import Path
+from runpy import run_path
 
-from setuptools import find_packages, setup
-
-from config.version import __version__
+from setuptools import find_namespace_packages, setup
 
 
 ROOT = Path(__file__).parent
+VERSION = run_path(str(ROOT / "config" / "version.py"))["__version__"]
 requirements = [
     line.strip()
     for line in (ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines()
@@ -16,14 +16,31 @@ requirements = [
 
 setup(
     name="nlvoorelkaar-reachout",
-    version=__version__,
+    version=VERSION,
     author="Noodzakelijk Online",
     description="Local-first, review-gated NLvoorelkaar outreach operations",
     long_description=(ROOT / "README.md").read_text(encoding="utf-8"),
     long_description_content_type="text/markdown",
-    url="https://github.com/Noodzakelijk-Online/021-Nlvoorelkaar-reachout",
-    packages=find_packages(),
-    py_modules=["main", "nlve_cli", "run"],
+    url="https://github.com/Robert-Velhorst/021-Nlvoorelkaar-reachout",
+    packages=find_namespace_packages(
+        include=(
+            "config*",
+            "connectors*",
+            "controllers*",
+            "database*",
+            "google_drive*",
+            "human_behavior*",
+            "models*",
+            "performance*",
+            "routing*",
+            "services*",
+            "utils*",
+            "view*",
+            "views*",
+            "web_api*",
+        )
+    ),
+    py_modules=["main", "nlve_cli", "nlve_operator", "run"],
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: End Users/Desktop",
@@ -42,10 +59,11 @@ setup(
         ],
     },
     include_package_data=True,
+    package_data={"web_api": ["static/*", "static/assets/*"]},
     zip_safe=False,
     keywords="volunteer outreach review approval privacy local-first",
     project_urls={
-        "Issues": "https://github.com/Noodzakelijk-Online/021-Nlvoorelkaar-reachout/issues",
-        "Source": "https://github.com/Noodzakelijk-Online/021-Nlvoorelkaar-reachout",
+        "Issues": "https://github.com/Robert-Velhorst/021-Nlvoorelkaar-reachout/issues",
+        "Source": "https://github.com/Robert-Velhorst/021-Nlvoorelkaar-reachout",
     },
 )

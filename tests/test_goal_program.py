@@ -1,6 +1,8 @@
 import json
 import sqlite3
+import time
 import zipfile
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -12,6 +14,7 @@ from services.data_management import DataImporter
 from services.diagnostics import SupportBundleBuilder, verify_local_critical_path
 from services.enhanced_scraper import EnhancedScraper, ScrapingConfig
 from services.outreach_ledger import OutreachLedger
+from services.provider_policy import TERMS_URL, TERMS_VERSION, validate_provider_authorization
 from utils.backup_manager import BackupManager
 
 
@@ -41,12 +44,62 @@ def test_runtime_defaults_fail_closed(monkeypatch):
         "NLVE_LIVE_SEARCH_ENABLED",
         "NLVE_LIVE_SEND_ENABLED",
         "NLVE_GOOGLE_DRIVE_ENABLED",
+        "NLVE_PROVIDER_APPROVAL_PATH",
     ):
         monkeypatch.delenv(name, raising=False)
     settings = RuntimeSettings.from_environment()
     assert settings.live_search_enabled is False
     assert settings.live_send_enabled is False
     assert settings.google_drive_enabled is False
+
+
+def _write_provider_approval(path: Path, actions=("login", "search", "send")) -> None:
+    today = date.today()
+    path.write_text(json.dumps({
+        "schema_version": 1,
+        "provider": "nlvoorelkaar",
+        "authorization_type": "written_platform_approval",
+        "approved_by": "NLvoorelkaar test approver",
+        "approval_reference": "TEST-123",
+        "evidence_sha256": "a" * 64,
+        "approved_actions": list(actions),
+        "terms_url": TERMS_URL,
+        "terms_version": TERMS_VERSION,
+        "terms_checked_at": today.isoformat(),
+        "expires_at": (today + timedelta(days=30)).isoformat(),
+        "acknowledgements": {
+            "personal_account_only": True,
+            "intended_use_only": True,
+            "no_credential_sharing": True,
+            "bounded_rate_limits": True,
+            "personal_data_protected": True,
+        },
+    }), encoding="utf-8")
+
+
+def test_live_provider_flags_require_current_written_approval(monkeypatch, tmp_path):
+    monkeypatch.setenv("NLVE_ENV", "production")
+    monkeypatch.setenv("NLVE_LIVE_SEARCH_ENABLED", "1")
+    monkeypatch.delenv("NLVE_PROVIDER_APPROVAL_PATH", raising=False)
+    with pytest.raises(ValueError, match="PROVIDER_APPROVAL_PATH"):
+        RuntimeSettings.from_environment()
+
+    approval = tmp_path / "provider-approval.json"
+    _write_provider_approval(approval, actions=("login", "search"))
+    monkeypatch.setenv("NLVE_PROVIDER_APPROVAL_PATH", str(approval))
+    settings = RuntimeSettings.from_environment()
+    assert settings.provider_authorization_status()["ready"] is True
+
+
+def test_provider_approval_rejects_stale_terms_review(tmp_path):
+    approval = tmp_path / "provider-approval.json"
+    _write_provider_approval(approval)
+    payload = json.loads(approval.read_text(encoding="utf-8"))
+    payload["terms_checked_at"] = (date.today() - timedelta(days=31)).isoformat()
+    approval.write_text(json.dumps(payload), encoding="utf-8")
+    status = validate_provider_authorization(str(approval), {"login", "send"})
+    assert status.ready is False
+    assert any("older than 30 days" in error for error in status.errors)
 
 
 def test_test_environment_rejects_external_features(monkeypatch):
@@ -86,6 +139,29 @@ def test_current_schema_candidate_import(tmp_path):
     assert stats == {"imported": 1, "updated": 0, "skipped": 0, "errors": 0}
     assert database.get_volunteers()[0]["volunteer_id"] == "v-1"
     assert database.get_audit_events(limit=1)[0]["action"] == "volunteers_imported"
+
+
+def test_large_volunteer_dataset_uses_database_pagination(tmp_path):
+    database = DatabaseManager(str(tmp_path / "data" / "large.db"))
+    with sqlite3.connect(database.db_path) as conn:
+        conn.executemany(
+            """
+            INSERT INTO volunteers (volunteer_id, name, location, categories, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                (f"v-{index:05d}", f"Volunteer {index}", "Arnhem", "maatjes", f"2026-01-{(index % 28) + 1:02d}")
+                for index in range(10000)
+            ),
+        )
+    started = time.monotonic()
+    page = database.get_volunteers({"location": "Arnhem"}, limit=100, offset=4900)
+    elapsed = time.monotonic() - started
+    assert len(page) == 100
+    assert len({row["volunteer_id"] for row in page}) == 100
+    assert elapsed < 2.0
+    with pytest.raises(ValueError, match="limit"):
+        database.get_volunteers(limit=5001)
 
 
 def test_send_claim_is_atomic_and_blocks_duplicate_attempt(tmp_path):

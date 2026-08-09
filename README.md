@@ -1,6 +1,6 @@
 # NLvoorelkaar Reachout
 
-Local-first desktop tooling for review-gated volunteer outreach. The maintained workflow is candidate intake, local campaign preparation, message review, assisted or explicitly enabled delivery, response tracking, follow-ups, privacy review, and verified backup/export.
+Local-first desktop and authenticated web tooling for review-gated volunteer outreach. The desktop GUI, web UI, CLI, and HAI feed share one SQLite-backed application service and the same audited workflow rules.
 
 The application does not claim access to private profiles, does not send unapproved messages, and does not enable live provider mutations by default.
 
@@ -8,6 +8,8 @@ The application does not claim access to private profiles, does not send unappro
 
 - Python 3.10, 3.11, or 3.12
 - Windows desktop for the supported GUI path
+- Node.js 24 only when rebuilding the web assets from source
+- Optional ngrok client for an operator-controlled HTTPS tunnel
 - An NLvoorelkaar account only for explicitly enabled live search/send
 - Optional Google OAuth desktop credentials only for explicitly enabled Drive backup
 
@@ -30,6 +32,21 @@ python run.py doctor
 python run.py smoke
 ```
 
+Start the authenticated web interface on the local machine:
+
+```powershell
+$env:NLVE_WEB_API_TOKEN = "use-a-private-random-value-of-at-least-32-characters"
+.\scripts\start-web.ps1
+```
+
+Open `http://127.0.0.1:8765` and enter that token. The token is kept in browser session storage and is removed when the tab session ends or the operator disconnects.
+
+For a verified ngrok HTTPS tunnel, use `.\scripts\start-ngrok.ps1`. The server stays bound to loopback; the script publishes runtime details only after both local and public health checks pass. See [docs/WEB_DEPLOYMENT.md](docs/WEB_DEPLOYMENT.md).
+
+## Standalone Windows Release
+
+Install `requirements-build.txt`, then run `.\scripts\build-release.ps1`. It creates an unsigned ZIP, SHA-256 checksum, and CycloneDX SBOM under ignored `artifacts/`. The archive contains the desktop GUI and the `NLVE-Operator.exe` CLI/web server. GitHub's Windows release workflow also attaches build provenance.
+
 ## Safe Defaults
 
 All external provider features fail closed. Opt in only after reviewing current platform terms and the operator runbook.
@@ -43,6 +60,8 @@ $env:NLVE_MAX_SEARCH_PAGES = "5"
 $env:NLVE_MAX_SEND_BATCH = "5"
 $env:NLVE_DAILY_SEND_LIMIT = "20"
 ```
+
+Live login, search, or send additionally requires a private, current written-approval record referenced by `NLVE_PROVIDER_APPROVAL_PATH`. Use `config/provider_authorization.example.json` as the schema template and `python run.py provider-preflight PATH --action search --action send` to validate it. Never commit the completed record or approval evidence.
 
 `NLVE_ENV=test` rejects every external-provider flag. Candidate CSV/JSON import, local message review, manual-send evidence, response tracking, exports, and local backups work without provider automation.
 
@@ -101,6 +120,8 @@ python -m pytest -q
 python nlve_cli.py smoke
 python -m pip_audit -r requirements.txt
 python -m pip_audit -r requirements-dev.txt
+python -m pip_audit -r requirements-build.txt
+cd web; npm.cmd ci; npm.cmd run build; npm.cmd audit --audit-level=high
 ```
 
 CI runs the test suite on Python 3.10-3.12, scans reachable Git history for forbidden secret/runtime paths, runs the local critical path, audits dependencies, and runs CodeQL.
@@ -110,6 +131,6 @@ CI runs the test suite on Python 3.10-3.12, scans reachable Git history for forb
 - The historically exposed Google OAuth client and refresh token require owner-side revocation/rotation.
 - Current NLvoorelkaar terms, selectors, account permissions, and live send confirmation semantics require owner/operator validation before enabling live flags.
 - A real Google Drive authorization and upload/download acceptance test requires private OAuth credentials.
-- No release-signing certificate or clean-machine Windows acceptance evidence is available yet.
+- No release-signing certificate or clean-machine signed Windows acceptance evidence is available yet. CI produces an unsigned, provenance-attested artifact.
 
-See [docs/OPERATOR_RUNBOOK.md](docs/OPERATOR_RUNBOOK.md), [docs/CRITICAL_PATH.md](docs/CRITICAL_PATH.md), and [docs/FINAL_VERIFICATION_REPORT.md](docs/FINAL_VERIFICATION_REPORT.md).
+See [docs/OPERATOR_RUNBOOK.md](docs/OPERATOR_RUNBOOK.md), [docs/API_DOCUMENTATION.md](docs/API_DOCUMENTATION.md), [docs/HAI_CONNECTOR.md](docs/HAI_CONNECTOR.md), and [docs/FINAL_VERIFICATION_REPORT.md](docs/FINAL_VERIFICATION_REPORT.md).

@@ -6,17 +6,21 @@ Use Python 3.10-3.12, install `requirements.txt`, then run `python run.py doctor
 
 Run the network-free release smoke test with `python run.py smoke` before using real records.
 
+For the browser interface, set a private `NLVE_WEB_API_TOKEN` of at least 32 characters and run `.\scripts\start-web.ps1`. For a public HTTPS session, use `.\scripts\start-ngrok.ps1` and verify the URL written to ignored `data/web-runtime.json`.
+
 ## Normal Workflow
 
 Use Candidate Intake, Campaigns, Messages, Responses, Follow-ups, Privacy, and Operations in that order. Approve only an exact message you have read. For assisted delivery, record evidence only after confirming the provider accepted the message.
 
 ## Enable a Provider
 
-1. Confirm current provider terms and owner permission.
-2. Set only the needed `NLVE_*_ENABLED=1` flag.
-3. Keep search pages, send batch, and daily limits conservative.
-4. Log in through the application; do not put credentials in source or `.env` files committed to Git.
-5. Run one owner-approved test record and inspect the audit/send history before expanding.
+1. Obtain written platform approval naming the approved login, search, or send actions.
+2. Store the completed authorization record and evidence outside the repository, based on `config/provider_authorization.example.json`.
+3. Validate it with `python run.py provider-preflight PATH --action search --action send`.
+4. Set `NLVE_PROVIDER_APPROVAL_PATH` and only the needed `NLVE_*_ENABLED=1` flag.
+5. Keep search pages, send batch, and daily limits conservative.
+6. Log in through the application; do not put credentials in source or committed `.env` files.
+7. Run one owner-approved test record and inspect the audit/send history before expanding.
 
 Drive additionally requires newly rotated private OAuth credentials. Use the Operations action so local backup verification occurs before upload.
 
@@ -39,4 +43,3 @@ Create and verify a backup before maintenance: `python run.py backup --name befo
 ## Incident Response
 
 Disable all live flags, activate Safety Stop, preserve the database and audit log, create a privacy-safe support bundle, and rotate affected provider credentials. Never attach raw logs, databases, tokens, or message exports to a public issue.
-

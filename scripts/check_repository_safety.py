@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FORBIDDEN_PATHS = (
     re.compile(r"(^|/)(credentials|token)\.json$", re.IGNORECASE),
     re.compile(r"(^|/)client_secret[^/]*\.json$", re.IGNORECASE),
+    re.compile(r"(^|/)provider_approval[^/]*\.json$", re.IGNORECASE),
     re.compile(r"(^|/)(data|logs|backups|dist)/", re.IGNORECASE),
     re.compile(r"\.(db|sqlite|sqlite3|log|pem|key)$", re.IGNORECASE),
 )

@@ -15,7 +15,7 @@ from typing import List, Dict, Optional, Any
 logger = logging.getLogger(__name__)
 
 class DatabaseManager:
-    SCHEMA_VERSION = 3
+    SCHEMA_VERSION = 4
 
     def __init__(self, db_path="data/nlvoorelkaar.db"):
         self.db_path = db_path
@@ -266,6 +266,21 @@ class DatabaseManager:
                 ''')
 
                 conn.execute('''
+                    CREATE TABLE IF NOT EXISTS runtime_controls (
+                        control_key TEXT PRIMARY KEY,
+                        value_json TEXT NOT NULL,
+                        actor TEXT NOT NULL DEFAULT 'system',
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO runtime_controls(control_key, value_json, actor)
+                    VALUES ('safety_stop', 'false', 'system')
+                    """
+                )
+
+                conn.execute('''
                     CREATE TABLE IF NOT EXISTS search_sessions (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         task_id TEXT,
@@ -389,6 +404,7 @@ class DatabaseManager:
                 # Create indexes for better performance
                 conn.execute('CREATE INDEX IF NOT EXISTS idx_volunteers_categories ON volunteers(categories)')
                 conn.execute('CREATE INDEX IF NOT EXISTS idx_volunteers_location ON volunteers(location)')
+                conn.execute('CREATE INDEX IF NOT EXISTS idx_volunteers_updated ON volunteers(updated_at DESC, id DESC)')
                 conn.execute('CREATE INDEX IF NOT EXISTS idx_contacts_volunteer_id ON contacts(volunteer_id)')
                 conn.execute('CREATE INDEX IF NOT EXISTS idx_contacts_campaign_id ON contacts(campaign_id)')
                 conn.execute('CREATE INDEX IF NOT EXISTS idx_contacts_date ON contacts(contact_date)')
@@ -419,10 +435,11 @@ class DatabaseManager:
                 self._ensure_column(conn, 'volunteers', 'archived_at', 'TIMESTAMP')
                 self._ensure_column(conn, 'volunteers', 'redacted_at', 'TIMESTAMP')
                 self._ensure_column(conn, 'volunteers', 'retention_notes', 'TEXT')
+                conn.execute('CREATE INDEX IF NOT EXISTS idx_volunteers_retention ON volunteers(retention_status, updated_at DESC)')
 
                 conn.execute(
                     "INSERT OR IGNORE INTO schema_migrations(version, name) VALUES (?, ?)",
-                    (self.SCHEMA_VERSION, "operating_ledger_and_safety_controls")
+                    (self.SCHEMA_VERSION, "durable_cross_process_runtime_controls")
                 )
                 conn.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
                 
@@ -535,6 +552,62 @@ class DatabaseManager:
             ))
             conn.commit()
             return cursor.lastrowid
+
+    def get_runtime_control(self, control_key: str, default: Any = None) -> Any:
+        """Read one cross-process runtime control from SQLite."""
+        if not isinstance(control_key, str) or not control_key.strip():
+            raise ValueError("control_key is required")
+        with closing(self.get_connection()) as conn:
+            row = conn.execute(
+                "SELECT value_json FROM runtime_controls WHERE control_key = ?",
+                (control_key.strip(),),
+            ).fetchone()
+        if not row:
+            return default
+        try:
+            return json.loads(row["value_json"])
+        except (TypeError, json.JSONDecodeError):
+            return default
+
+    def set_runtime_control(self, control_key: str, value: Any, actor: str = "system") -> None:
+        """Atomically update one cross-process control and record its audit event."""
+        if not isinstance(control_key, str) or not control_key.strip():
+            raise ValueError("control_key is required")
+        serialized = json.dumps(value, sort_keys=True)
+        with closing(self.get_connection()) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            previous = conn.execute(
+                "SELECT value_json FROM runtime_controls WHERE control_key = ?",
+                (control_key.strip(),),
+            ).fetchone()
+            conn.execute(
+                """
+                INSERT INTO runtime_controls(control_key, value_json, actor, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(control_key) DO UPDATE SET
+                    value_json = excluded.value_json,
+                    actor = excluded.actor,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (control_key.strip(), serialized, actor),
+            )
+            conn.execute(
+                """
+                INSERT INTO audit_events(
+                    entity_type, entity_id, action, actor, before_state, after_state, risk_level
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "runtime_control",
+                    control_key.strip(),
+                    "runtime_control_updated",
+                    actor,
+                    previous["value_json"] if previous else None,
+                    serialized,
+                    "high" if control_key.strip() == "safety_stop" else "medium",
+                ),
+            )
+            conn.commit()
 
     def create_message_draft(self, draft_data: Dict[str, Any]) -> int:
         """Create or update a personalized message draft for review."""
@@ -864,7 +937,8 @@ class DatabaseManager:
             row = conn.execute('''
                 SELECT COUNT(*)
                 FROM message_send_attempts
-                WHERE status = 'sent' AND datetime(created_at) >= datetime('now', 'localtime', 'start of day')
+                WHERE status = 'sent'
+                  AND datetime(created_at, 'localtime') >= datetime('now', 'localtime', 'start of day')
             ''').fetchone()
             return int(row[0])
 
@@ -2393,9 +2467,18 @@ class DatabaseManager:
 
         return stats
             
-    def get_volunteers(self, filters: Dict[str, Any] = None) -> List[Dict[str, Any]]:
-        """Get volunteers with optional filters"""
+    def get_volunteers(
+        self,
+        filters: Dict[str, Any] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """Get volunteers with optional filters and bounded database pagination."""
         try:
+            if limit is not None and not 1 <= int(limit) <= 5000:
+                raise ValueError("limit must be between 1 and 5000")
+            if int(offset) < 0:
+                raise ValueError("offset cannot be negative")
             with closing(self.get_connection()) as conn:
                 query = "SELECT * FROM volunteers WHERE 1=1"
                 params = []
@@ -2415,12 +2498,18 @@ class DatabaseManager:
                     if 'not_blacklisted' in filters and filters['not_blacklisted']:
                         query += " AND volunteer_id NOT IN (SELECT volunteer_id FROM blacklist)"
                         
-                query += " ORDER BY updated_at DESC"
+                query += " ORDER BY updated_at DESC, id DESC"
+                if limit is not None:
+                    query += " LIMIT ? OFFSET ?"
+                    params.extend((int(limit), int(offset)))
+                elif offset:
+                    query += " LIMIT -1 OFFSET ?"
+                    params.append(int(offset))
                 
                 cursor = conn.execute(query, params)
                 return [dict(row) for row in cursor.fetchall()]
                 
-        except (AttributeError, TypeError, ValueError, sqlite3.DatabaseError) as e:
+        except (AttributeError, TypeError, sqlite3.DatabaseError) as e:
             logger.error("Failed to get volunteers: %s", type(e).__name__)
             return []
 

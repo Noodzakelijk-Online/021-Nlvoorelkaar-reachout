@@ -13,6 +13,9 @@ GitHub secret scanning and push protection are enabled. Its historical alerts re
 ## Security Boundaries
 
 - External search, send, and Drive features are disabled by default.
+- Live NLvoorelkaar login, search, and send each require a valid private written-approval record that names the approved actions and current terms version.
+- The web API requires a bearer token of at least 32 characters, applies trusted-host validation, bounded request rates, a restrictive CSP, no-store responses, and no CORS grant.
+- The web server binds to loopback by default. Public access is supported through a health-checked ngrok HTTPS tunnel, not direct public binding.
 - Message sending requires a persisted draft, an exact approved snapshot, a bounded explicit action, and a durable attempt/audit record.
 - Manual sends require operator-entered evidence. The app never infers that a copied message was sent.
 - Stale in-flight sends become `external_outcome_unknown`; no automatic retry occurs.
@@ -35,6 +38,9 @@ python -m pytest -q
 python nlve_cli.py smoke
 python -m pip_audit -r requirements.txt
 python -m pip_audit -r requirements-dev.txt
+python -m pip_audit -r requirements-build.txt
+cd web; npm.cmd ci; npm.cmd run build; npm.cmd audit --audit-level=high
+.\scripts\build-release.ps1
 ```
 
 Do not claim live-provider readiness until the provider/account acceptance items in `docs/FINAL_VERIFICATION_REPORT.md` are complete.
