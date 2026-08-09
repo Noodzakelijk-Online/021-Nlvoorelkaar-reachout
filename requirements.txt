@@ -8,7 +8,7 @@ google-auth==2.35.0
 google-auth-oauthlib==1.2.1
 google-auth-httplib2==0.2.0
 python-dateutil==2.9.0
-keyring==25.5.0
+keyring==25.7.0
 Pillow==12.3.0
 darkdetect==0.8.0
 schedule==1.2.2
