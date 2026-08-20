@@ -1,19 +1,310 @@
 # NLvoorelkaar Reachout
 
-Local-first desktop and authenticated web tooling for review-gated volunteer outreach. The desktop GUI, web UI, CLI, and HAI feed share one SQLite-backed application service and the same audited workflow rules.
+NLvoorelkaar Reachout is a local-first outreach operations tool for people who
+need to contact potential volunteers through a careful, auditable, human-reviewed
+workflow.
 
-The application does not claim access to private profiles, does not send unapproved messages, and does not enable live provider mutations by default.
+It was originally a desktop automation prototype. It has since been hardened
+into an operator application with a shared backend, a desktop GUI, an
+authenticated web dashboard, command-line tools, a read-only HAI feed, SQLite
+storage, privacy controls, release packaging, and CI/security gates.
+
+The central rule is simple: the app may help an operator organize outreach, draft
+messages, track replies, and keep evidence, but it does not silently send
+messages or claim provider access. Live NLvoorelkaar actions are disabled by
+default and require explicit feature flags plus a private written authorization
+record for the exact action being attempted.
+
+## Who This Repository Is For
+
+This repository is useful for three groups:
+
+- Non-technical operators who want a safer way to manage volunteer outreach,
+  review every message before it is sent, track responses, and keep a privacy
+  record.
+- Software developers who need to maintain, test, extend, package, or audit the
+  application.
+- Technical owners who need to understand exactly which external systems are
+  involved, which credentials are needed, what remains blocked, and what evidence
+  proves the local application works.
+
+## Plain-English Summary
+
+NLvoorelkaar Reachout helps an operator:
+
+1. Import a reviewed list of candidate volunteers from CSV or JSON.
+2. Create an outreach campaign.
+3. Generate personalized message drafts from a campaign template.
+4. Review, edit, approve, or reject each exact draft.
+5. Send messages manually and record proof, or explicitly enable bounded live
+   sending after written provider approval.
+6. Record replies and follow-up tasks.
+7. Review old records for archive or redaction.
+8. Make verified backups and privacy-safe support bundles.
+9. Share a privacy-minimized read-only work feed with HAI.
+
+The app is built for assistance and traceability, not autonomous mass messaging.
+The safest and default mode is local-only/manual-send mode.
+
+## What This Is Not
+
+This repository is not:
+
+- An official NLvoorelkaar product.
+- A guarantee that NLvoorelkaar permits automated login, search, or messaging.
+- A scraper that should be run without current written platform approval.
+- A bulk sender.
+- A SaaS product with multi-tenant accounts.
+- A tool that can revoke historically exposed credentials for you.
+- A replacement for the operator's privacy, consent, and platform-policy
+  responsibilities.
+
+Any live provider use must be separately validated by the owner/operator against
+current NLvoorelkaar terms, account permissions, selectors, rate limits, and
+message confirmation behavior.
+
+## Current Release Shape
+
+- Application version: `3.1.0`
+- Runtime model: single-operator, local-first application
+- Primary platform: Windows desktop
+- Supported Python: `3.10`, `3.11`, and `3.12`
+- Unsupported Python: `3.13+` and machine-default `3.14` are rejected by the
+  launcher
+- Database: local SQLite with schema migrations and foreign keys
+- Web interface: FastAPI plus compiled React/Vite assets
+- CLI: `nlve_cli.py` and packaged `NLVE-Operator.exe`
+- Desktop GUI: Python desktop application entry point
+- Release packaging: unsigned Windows ZIP, SHA-256 checksum, SBOM, and GitHub
+  Actions provenance
+- External network features: disabled by default
+
+## Major Features
+
+### Candidate Intake
+
+Candidates can be imported from reviewed CSV or JSON files. Imports are local,
+audited, and idempotent by volunteer ID. Importing candidates does not contact
+NLvoorelkaar.
+
+Accepted identifiers include:
+
+- `volunteer_id`
+- legacy `profile_id`
+
+Useful optional fields include:
+
+- `name`
+- `location`
+- `description`
+- `skills`
+- `categories`
+- `availability`
+- `contact_info`
+- `profile_url`
+
+### Campaigns and Drafts
+
+Operators create campaigns with a target location/category, description, and
+message template. The shared application service creates reviewable message
+drafts and stores the exact rendered message snapshot for approval.
+
+### Human Review Gate
+
+Every draft must be reviewed before completion. Approval and rejection require a
+non-empty reason. Manual send completion requires operator-entered evidence.
+
+The app is intentionally strict here: it does not infer that a message was sent
+from a UI state, local assumption, or provider-side ambiguity.
+
+### Assisted Sending
+
+The default delivery model is assisted/manual:
+
+1. The operator approves the exact message.
+2. The operator sends it through the appropriate channel.
+3. The operator records evidence that delivery was accepted.
+4. The app stores that evidence in the local audit trail.
+
+### Optional Live Provider Actions
+
+Live NLvoorelkaar login/search/send paths are fail-closed. They require all of
+the following:
+
+- `NLVE_ENV=production`
+- the specific live feature flag enabled
+- conservative rate and batch limits
+- a private provider approval JSON file outside the repository
+- provider approval that names the exact action, such as `login`, `search`, or
+  `send`
+- successful provider preflight validation
+
+Tests cannot enable live provider actions. `NLVE_ENV=test` rejects external
+provider flags.
+
+### Responses and Follow-Ups
+
+Operators can record responses, classify outcomes, queue follow-ups, approve
+follow-up messages, and record follow-up send evidence. Follow-ups use persisted
+message snapshots so approved content is not rebuilt from mutable campaign data.
+
+### Safety Stop
+
+The durable Safety Stop blocks new provider actions and blocks manual completion
+flows that would make outreach state progress while the stop is active. It also
+requests cancellation of active work. It cannot retract a request already
+accepted by an external provider.
+
+If a provider send result is ambiguous, the app records
+`external_outcome_unknown`. The operator must inspect provider history before
+retrying.
+
+### Privacy Controls
+
+The app supports:
+
+- reviewed volunteer export
+- retention candidate review
+- archive decisions
+- redaction decisions
+- privacy-safe support bundles
+- backups that exclude credential, token, session, and runtime-only files
+
+Retention proposals do not delete automatically. Archive and redaction require
+explicit operator action and an audit reason.
+
+### Backups and Restore Safety
+
+Local backup and restore are built around safety checks:
+
+- filtered backup contents
+- traversal checks
+- symlink checks
+- compression expansion checks
+- staging before restore
+- rollback backup before restore
+- restore abort if rollback protection cannot be created
+
+### Google Drive Backup
+
+Google Drive support is optional and disabled by default. It uses the `drive.file`
+scope and is intended for app-created backup files only.
+
+Creating the Drive manager has no authentication, browser, refresh-token, or
+remote-write side effects. Upload is an explicit operator action after a verified
+local backup exists.
+
+### Authenticated Web Dashboard
+
+The web UI exposes the same local application service as the desktop and CLI.
+It includes views for:
+
+- Dashboard
+- Candidate Intake
+- Campaigns
+- Messages
+- Responses
+- Follow-ups
+- Privacy
+- Operations
+
+The API uses bearer authentication, disables public docs, applies trusted-host
+checks, sets defensive browser headers, limits request rates, and bounds uploads
+and pagination.
+
+### ngrok Access
+
+The app can be exposed through an operator-controlled ngrok HTTPS tunnel while
+the server remains bound to `127.0.0.1`.
+
+The launcher starts local web and ngrok processes, waits for local health,
+discovers the HTTPS tunnel, verifies public health, writes ignored runtime
+metadata, and cleans up only processes it created if startup fails.
+
+Public tunnel access does not authorize provider automation. Live provider
+actions still require the provider flags and private written approval record.
+
+### HAI Connector
+
+The HAI integration is read-only and privacy-minimized. It can expose review work
+and stable references, but it does not expose message bodies, volunteer names,
+contact details, credentials, provider approval evidence, or execution authority.
+
+HAI cannot approve drafts, send messages, clear Safety Stop, change retention, or
+mutate NLvoorelkaar Reachout.
+
+## Repository Layout
+
+| Path | Purpose |
+| --- | --- |
+| `main.py` | Desktop application entry point. |
+| `run.py` | Runtime launcher with supported-Python guard. |
+| `nlve_cli.py` | Operator CLI commands such as doctor, smoke, backup, serve, and HAI sync. |
+| `nlve_operator.py` | Packaged operator entry point. |
+| `services/application_service.py` | Transport-independent use-case boundary shared by desktop, web, CLI, and HAI. |
+| `services/outreach_ledger.py` | Campaign, draft, approval, send, response, follow-up, outcome, privacy, and HAI projection logic. |
+| `services/provider_policy.py` | Written-provider-approval validation and evidence hashing. |
+| `services/diagnostics.py` | Doctor, smoke, backup, support bundle, and local readiness tooling. |
+| `database/database_manager.py` | SQLite schema, migrations, health checks, and database primitives. |
+| `web_api/app.py` | FastAPI transport and static React app serving. |
+| `web/` | React/Vite source for the browser operator UI. |
+| `web_api/static/` | Compiled web assets packaged with the Python app. |
+| `connectors/hai_bridge.py` | Authenticated HAI Generic JSON Feed writer. |
+| `google_drive/google_api_services.py` | Optional explicit Google Drive backup adapter. |
+| `scripts/start-web.ps1` | Starts the loopback web server. |
+| `scripts/start-ngrok.ps1` | Starts web plus ngrok and verifies public health. |
+| `scripts/build-release.ps1` | Builds the unsigned Windows release archive, checksum, and SBOM. |
+| `scripts/check_repository_safety.py` | Rejects committed runtime data, credentials, tokens, and unsafe paths. |
+| `docs/` | Operator, API, deployment, security, audit, verification, and roadmap documentation. |
+| `tests/` | Backend, workflow, API, safety, performance, and regression tests. |
+| `config/runtime.env.example` | Safe environment variable template. |
+| `config/provider_authorization.example.json` | Schema template for private provider approval records. |
+
+## Data Stored Locally
+
+Runtime data is local by default and belongs in ignored paths such as:
+
+- `data/`
+- `logs/`
+- `backups/`
+- private files referenced by environment variables
+
+The local database may contain:
+
+- volunteer IDs
+- profile URLs and profile text
+- locations, skills, categories, and availability
+- message drafts and exact approved snapshots
+- operator review reasons
+- manual send evidence
+- responses and follow-up records
+- privacy decisions
+- audit events
+
+Do not commit runtime data, provider approvals, logs, databases, OAuth files,
+tokens, exports, or backup archives.
 
 ## Supported Runtime
 
-- Python 3.10, 3.11, or 3.12
-- Windows desktop for the supported GUI path
-- Node.js 24 only when rebuilding the web assets from source
-- Optional ngrok client for an operator-controlled HTTPS tunnel
-- An NLvoorelkaar account only for explicitly enabled live search/send
-- Optional Google OAuth desktop credentials only for explicitly enabled Drive backup
+Required:
 
-## Install and Run
+- Windows for the supported desktop/operator release path
+- Python `3.10`, `3.11`, or `3.12`
+- `pip`
+- local filesystem access for the SQLite database and backups
+
+Optional:
+
+- Node.js `24` when rebuilding the web frontend from source
+- ngrok client for a public HTTPS tunnel
+- NLvoorelkaar account for explicitly approved live login/search/send
+- newly rotated Google OAuth desktop credentials for explicitly enabled Drive
+  backup
+
+The launcher intentionally rejects unsupported Python versions. If `python` on a
+machine points to Python `3.14`, use a supported Python executable instead.
+
+## Quick Start: Local Desktop
 
 ```powershell
 python -m venv .venv
@@ -23,33 +314,84 @@ python -m pip install -r requirements.txt
 python run.py
 ```
 
-The launcher never installs packages automatically. It reports missing dependencies and exits.
+The launcher never installs packages automatically. If dependencies are missing,
+it reports the problem and exits.
 
-Run local diagnostics and the network-free critical-path verification:
+## Quick Start: CLI
 
 ```powershell
-python run.py doctor
-python run.py smoke
+python -m pip install -r requirements.txt
+python nlve_cli.py doctor
+python nlve_cli.py smoke
 ```
 
-Start the authenticated web interface on the local machine:
+Installed console scripts are also available when the package is installed:
+
+```powershell
+nlve doctor
+nlve smoke
+nlve-gui
+```
+
+Important CLI commands:
+
+| Command | Purpose |
+| --- | --- |
+| `doctor` | Check local readiness without provider network calls. |
+| `smoke` | Run the isolated network-free critical path. |
+| `reconcile-sends` | Mark stale ambiguous sends for operator reconciliation. |
+| `import-volunteers` | Import reviewed CSV/JSON candidate data. |
+| `export-volunteers` | Export active volunteer data. |
+| `backup` | Create and verify a privacy-filtered local backup. |
+| `support-bundle` | Create a privacy-safe diagnostic ZIP. |
+| `provider-preflight` | Validate a private provider approval record without network access. |
+| `hash-approval-evidence` | Compute the SHA-256 used by a provider approval record. |
+| `serve` | Run the authenticated web application. |
+| `hai-sync` | Write an authenticated HAI Generic JSON Feed. |
+
+## Quick Start: Web UI
+
+Generate a private token of at least 32 characters, then start the local web app:
 
 ```powershell
 $env:NLVE_WEB_API_TOKEN = "use-a-private-random-value-of-at-least-32-characters"
-.\scripts\start-web.ps1
+.\scripts\start-web.ps1 -Port 8765
 ```
 
-Open `http://127.0.0.1:8765` and enter that token. The token is kept in browser session storage and is removed when the tab session ends or the operator disconnects.
+Open:
 
-For a verified ngrok HTTPS tunnel, use `.\scripts\start-ngrok.ps1`. The server stays bound to loopback; the script publishes runtime details only after both local and public health checks pass. See [docs/WEB_DEPLOYMENT.md](docs/WEB_DEPLOYMENT.md).
+```text
+http://127.0.0.1:8765
+```
 
-## Standalone Windows Release
+Enter the same bearer token in the login screen. The browser stores the token in
+session storage, not local storage, so it is cleared when the tab session ends or
+the operator disconnects.
 
-Install `requirements-build.txt`, then run `.\scripts\build-release.ps1`. It creates an unsigned ZIP, SHA-256 checksum, and CycloneDX SBOM under ignored `artifacts/`. The archive contains the desktop GUI and the `NLVE-Operator.exe` CLI/web server. GitHub's Windows release workflow also attaches build provenance.
+## Quick Start: ngrok HTTPS Tunnel
 
-## Safe Defaults
+Install and authorize the official ngrok client separately, then run:
 
-All external provider features fail closed. Opt in only after reviewing current platform terms and the operator runbook.
+```powershell
+$env:NLVE_WEB_API_TOKEN = "use-a-private-random-value-of-at-least-32-characters"
+.\scripts\start-ngrok.ps1 -Port 8765
+```
+
+For a reserved ngrok domain:
+
+```powershell
+.\scripts\start-ngrok.ps1 -Port 8765 -Domain your-domain.ngrok.app
+```
+
+If using a custom domain, include the hostname in `NLVE_WEB_TRUSTED_HOSTS`.
+
+Runtime connection details are written to ignored `data/web-runtime.json` only
+after local and public health checks pass.
+
+## Safe Production Defaults
+
+Start from `config/runtime.env.example` and keep private values outside the
+repository:
 
 ```powershell
 $env:NLVE_ENV = "production"
@@ -61,36 +403,52 @@ $env:NLVE_MAX_SEND_BATCH = "5"
 $env:NLVE_DAILY_SEND_LIMIT = "20"
 ```
 
-Live login, search, or send additionally requires a private, current written-approval record referenced by `NLVE_PROVIDER_APPROVAL_PATH`. Use `config/provider_authorization.example.json` as the schema template and `python run.py provider-preflight PATH --action search --action send` to validate it. Never commit the completed record or approval evidence.
+These defaults allow local intake, review, manual-send evidence, responses,
+follow-ups, privacy actions, local backups, diagnostics, web UI, and HAI feed.
+They do not enable provider automation.
 
-`NLVE_ENV=test` rejects every external-provider flag. Candidate CSV/JSON import, local message review, manual-send evidence, response tracking, exports, and local backups work without provider automation.
+## Enabling Live NLvoorelkaar Actions
 
-## Critical Path
+Live provider actions require a private authorization record based on
+`config/provider_authorization.example.json`.
 
-1. Open **Candidate Intake** and import reviewed CSV/JSON data, or explicitly enable bounded live search.
-2. Create a campaign with a target and message template.
-3. Assess matches and create personalized drafts.
-4. Review/edit each draft and approve its exact snapshot.
-5. Copy and send manually, then record evidence, or explicitly enable a bounded live send.
-6. Record responses, approve follow-ups, and record outcomes.
-7. Review privacy retention proposals and export or redact data as needed.
-8. Create a verified local backup; optionally upload it to app-scoped Google Drive storage.
-
-Live send actions are capped per action and per day. The emergency **Safety Stop** blocks new provider actions and requests cancellation of active work. A stale in-flight send is marked `external_outcome_unknown`; the operator must inspect provider history before re-approval.
-
-## Candidate Import
-
-CSV and JSON imports accept `volunteer_id` (or legacy `profile_id`) plus optional fields such as `name`, `location`, `description`, `skills`, `categories`, `availability`, `contact_info`, and `profile_url`.
+1. Obtain written platform approval that names the approved account and exact
+   actions.
+2. Store the completed approval JSON and supporting evidence outside the
+   repository.
+3. Hash the evidence file:
 
 ```powershell
-python run.py import-volunteers C:\private\reviewed-candidates.csv
+python nlve_cli.py hash-approval-evidence C:\private\approval-email.pdf
 ```
 
-Imports are local, audited, idempotent by volunteer ID, and do not contact NLvoorelkaar.
+4. Put the hash in the private approval JSON.
+5. Validate the approval record:
 
-## Google Drive
+```powershell
+python nlve_cli.py provider-preflight C:\private\nlvoorelkaar_provider_approval.json --action search --action send
+```
 
-Drive support uses the `drive.file` scope. Creating `GoogleDriveManager` has no auth, browser, refresh, or remote-write side effects. An explicit operator action connects and uploads one verified backup.
+6. Set:
+
+```powershell
+$env:NLVE_PROVIDER_APPROVAL_PATH = "C:\private\nlvoorelkaar_provider_approval.json"
+$env:NLVE_LIVE_SEARCH_ENABLED = "1"
+$env:NLVE_LIVE_SEND_ENABLED = "1"
+```
+
+Only enable the action flags that are actually approved and needed. Keep search
+pages, send batches, and daily send limits conservative.
+
+## Google Drive Backup
+
+Drive backup is disabled by default:
+
+```powershell
+$env:NLVE_GOOGLE_DRIVE_ENABLED = "0"
+```
+
+To enable it, use newly rotated private OAuth credentials:
 
 ```powershell
 $env:NLVE_GOOGLE_DRIVE_ENABLED = "1"
@@ -98,22 +456,143 @@ $env:NLVE_GOOGLE_CLIENT_SECRET_PATH = "C:\private\google_credentials.json"
 $env:NLVE_GOOGLE_TOKEN_PATH = "C:\private\google_token.json"
 ```
 
-Do not reuse the OAuth credentials that were historically committed. They are compromised and must be revoked/rotated in Google Cloud.
+Do not reuse any OAuth client, token, refresh token, or access token that was
+historically committed. Treat historically exposed Google material as
+compromised until the owner revokes and rotates it in Google Cloud.
 
-## Data and Privacy
+## Import, Export, Backup, and Support Examples
 
-Runtime data belongs under ignored `data/`, `logs/`, and `backups/` paths. Local databases can contain volunteer identifiers, profiles, message bodies, responses, and audit evidence. Backups exclude credential/token/session-like files. Support bundles exclude logs, credentials, message bodies, and volunteer records.
+Import reviewed candidates:
 
 ```powershell
-python run.py export-volunteers C:\private\volunteers.json --format json
-python run.py backup --name before-maintenance
-python run.py support-bundle C:\private\nlve-support.zip
+python nlve_cli.py import-volunteers C:\private\reviewed-candidates.csv
 ```
 
-## Development Checks
+Export active volunteers:
 
 ```powershell
+python nlve_cli.py export-volunteers C:\private\volunteers.json --format json
+```
+
+Create a verified backup:
+
+```powershell
+python nlve_cli.py backup --name before-maintenance
+```
+
+Create a privacy-safe support bundle:
+
+```powershell
+python nlve_cli.py support-bundle C:\private\nlve-support.zip
+```
+
+Reconcile ambiguous sends:
+
+```powershell
+python nlve_cli.py reconcile-sends --minutes 15
+```
+
+## Web API Summary
+
+The FastAPI app in `web_api/app.py` exposes the shared application service.
+
+Authentication:
+
+- `GET /healthz` is unauthenticated for health checks.
+- Every `/api/v1/*` route requires `Authorization: Bearer <token>`.
+- `NLVE_WEB_API_TOKEN` must be at least 32 characters.
+- OpenAPI, Swagger UI, and ReDoc are disabled.
+
+Important read routes:
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/status` | Runtime, database, provider, HAI, and Safety Stop state. |
+| `GET` | `/api/v1/dashboard` | Operating summaries and current queues. |
+| `GET` | `/api/v1/volunteers` | Paginated candidate records. |
+| `GET` | `/api/v1/campaigns` | Campaign list. |
+| `GET` | `/api/v1/messages/review` | Drafts requiring review. |
+| `GET` | `/api/v1/messages?message_status=approved` | Approved drafts awaiting completion. |
+| `GET` | `/api/v1/responses` | Recorded response inbox. |
+| `GET` | `/api/v1/follow-ups` | Follow-up queue. |
+| `GET` | `/api/v1/privacy/retention` | Retention review candidates. |
+| `GET` | `/api/v1/hai/feed` | Privacy-minimized HAI feed. |
+
+Important mutation routes:
+
+| Method | Route | Evidence required |
+| --- | --- | --- |
+| `POST` | `/api/v1/volunteers/import` | Reviewed CSV or JSON file. |
+| `POST` | `/api/v1/campaigns` | Campaign fields and template. |
+| `POST` | `/api/v1/campaigns/{id}/drafts` | Optional bounded volunteer ID list. |
+| `POST` | `/api/v1/messages/{id}/approve` | Review reason. |
+| `POST` | `/api/v1/messages/{id}/reject` | Review reason. |
+| `POST` | `/api/v1/messages/{id}/confirm-manual-send` | Operator-observed delivery evidence. |
+| `POST` | `/api/v1/responses` | Volunteer ID, campaign ID, and response content. |
+| `POST` | `/api/v1/follow-ups/{id}/approve` | Persisted suggested follow-up snapshot. |
+| `POST` | `/api/v1/follow-ups/{id}/confirm-manual-send` | Operator-observed delivery evidence. |
+| `POST` | `/api/v1/privacy/retention/{id}/archive` | Retention decision reason. |
+| `POST` | `/api/v1/privacy/retention/{id}/redact` | Retention decision reason. |
+| `PUT` | `/api/v1/operations/safety-stop` | Explicit active/clear state. |
+
+See `docs/API_DOCUMENTATION.md` for the full API contract.
+
+## Security Model
+
+Important controls:
+
+- external provider flags are off by default
+- live provider actions require a private written approval record
+- exact message snapshots are approved before completion
+- manual send completion requires evidence
+- atomic send claims avoid duplicate sends
+- stale ambiguous sends are reconciled instead of retried automatically
+- durable Safety Stop blocks new provider actions
+- web API uses bearer auth and constant-time token comparison
+- trusted-host middleware restricts public hostnames
+- CSP, `no-store`, frame denial, and other defensive headers are applied
+- public API docs are disabled
+- no broad CORS grant is configured
+- uploads and list routes are bounded
+- backups filter sensitive and runtime-only files
+- repository safety checks reject tracked credentials, tokens, logs, databases,
+  backups, build output, and completed provider approvals
+- dependency audits run in local verification and CI
+- CodeQL runs in GitHub Actions
+
+See `docs/SECURITY_AND_PRIVACY.md` for the threat model and privacy design.
+
+## Historical Credential Incident
+
+Older history contained Google OAuth material. Source cleanup and history hygiene
+have been performed, but rewriting history is not the same as revoking a
+credential.
+
+The owner must still:
+
+- revoke exposed Google OAuth clients and tokens
+- rotate replacement credentials
+- inspect Google Cloud/OAuth activity
+- avoid reusing any historically committed secret
+
+Do not dismiss secret-scanning alerts as false positives unless the owner has
+confirmed revocation and rotation.
+
+## Development Setup
+
+Create a supported Python environment:
+
+```powershell
+py -3.12 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 python -m pip install -r requirements-dev.txt
+```
+
+Run the core checks:
+
+```powershell
 python scripts\check_repository_safety.py
 python -m compileall -q .
 python -m pytest -q
@@ -121,16 +600,119 @@ python nlve_cli.py smoke
 python -m pip_audit -r requirements.txt
 python -m pip_audit -r requirements-dev.txt
 python -m pip_audit -r requirements-build.txt
-cd web; npm.cmd ci; npm.cmd run build; npm.cmd audit --audit-level=high
 ```
 
-CI runs the test suite on Python 3.10-3.12, scans reachable Git history for forbidden secret/runtime paths, runs the local critical path, audits dependencies, and runs CodeQL.
+Build the frontend from source:
 
-## Current External Blockers
+```powershell
+cd web
+npm.cmd ci
+npm.cmd run build
+npm.cmd audit --audit-level=high
+```
 
-- The historically exposed Google OAuth client and refresh token require owner-side revocation/rotation.
-- Current NLvoorelkaar terms, selectors, account permissions, and live send confirmation semantics require owner/operator validation before enabling live flags.
-- A real Google Drive authorization and upload/download acceptance test requires private OAuth credentials.
-- No release-signing certificate or clean-machine signed Windows acceptance evidence is available yet. CI produces an unsigned, provenance-attested artifact.
+The compiled frontend is copied into `web_api/static/` for packaged serving.
 
-See [docs/OPERATOR_RUNBOOK.md](docs/OPERATOR_RUNBOOK.md), [docs/API_DOCUMENTATION.md](docs/API_DOCUMENTATION.md), [docs/HAI_CONNECTOR.md](docs/HAI_CONNECTOR.md), and [docs/FINAL_VERIFICATION_REPORT.md](docs/FINAL_VERIFICATION_REPORT.md).
+## Release Build
+
+Install build requirements, then run:
+
+```powershell
+python -m pip install -r requirements-build.txt
+.\scripts\build-release.ps1
+```
+
+The release script creates ignored artifacts such as:
+
+- unsigned Windows ZIP
+- SHA-256 checksum
+- CycloneDX SBOM
+- packaged desktop/operator executables
+
+The GitHub Windows release workflow performs the release build in CI and attaches
+build provenance. The produced binary is unsigned unless a signing certificate is
+provided separately.
+
+## CI and Quality Gates
+
+CI is designed to verify a clean checkout, not just the developer machine. Gates
+include:
+
+- Python `3.10`, `3.11`, and `3.12` test matrix
+- repository safety scan
+- reachable-history forbidden-path scan
+- Python compilation
+- unit and workflow tests
+- local critical-path smoke test
+- dependency audits
+- frontend install/build/audit
+- CodeQL
+- Windows release workflow
+
+Local tests or mocks are not treated as proof of live NLvoorelkaar acceptance,
+Google Drive acceptance, ngrok account availability, or signed Windows release
+readiness.
+
+## Architecture Notes for Developers
+
+The application is deliberately centered on a transport-independent service
+layer:
+
+- Desktop, web, CLI, and HAI use the same application service.
+- The service layer owns workflow rules rather than duplicating them in the UI.
+- SQLite is the source of truth for campaigns, drafts, approvals, send attempts,
+  responses, follow-ups, privacy decisions, and Safety Stop state.
+- Provider adapters sit behind runtime policy checks.
+- Tests can exercise local workflows without network access.
+
+Key invariants:
+
+- A draft cannot be completed without approval.
+- A send completion cannot be recorded without evidence.
+- Live provider actions require both a feature flag and written approval.
+- Test mode cannot enable external provider actions.
+- Ambiguous provider outcomes are not automatically retried.
+- Privacy actions require explicit reasons.
+- HAI is read-only and privacy-minimized.
+
+## External Blockers and Non-Claims
+
+The repository contains the local application and verification gates, but the
+following cannot be truthfully completed by source code alone:
+
+- current NLvoorelkaar written approval
+- current NLvoorelkaar live selector/login/send acceptance
+- owner-side Google credential revocation and rotation
+- real Google Drive upload/readback/restore acceptance with private credentials
+- account-specific ngrok endpoint availability
+- Windows code-signing certificate and signed clean-machine acceptance
+- manual accessibility and non-technical operator acceptance
+
+These are external gates. They should remain visible in release notes and
+operator documentation until the owner completes them with real evidence.
+
+## Documentation Index
+
+| Document | What it covers |
+| --- | --- |
+| `docs/OPERATOR_RUNBOOK.md` | How to run the product safely as an operator. |
+| `docs/API_DOCUMENTATION.md` | Web API routes, authentication, errors, and service notes. |
+| `docs/WEB_DEPLOYMENT.md` | Local web and ngrok deployment. |
+| `docs/HAI_CONNECTOR.md` | Read-only HAI feed setup and limits. |
+| `docs/SECURITY_AND_PRIVACY.md` | Threat model, privacy design, and controls. |
+| `docs/TECHNICAL_AUDIT.md` | Audit findings and dispositions. |
+| `docs/FINAL_VERIFICATION_REPORT.md` | Verification evidence and blocked external evidence. |
+| `docs/GOAL_COMPLETION_MATRIX.md` | Requirement-by-requirement implementation status. |
+| `docs/TECHNICAL_DEBT.md` | Remaining maintenance and improvement items. |
+| `docs/ACCEPTANCE_TESTS.md` | Acceptance test matrix. |
+| `docs/UI_ACTION_AUDIT.md` | UI action coverage and routing. |
+| `docs/TASK_GRAPH.md` | Dependency and task graph. |
+| `docs/CODEX_WORKLOG.md` | Implementation worklog. |
+
+## License and Responsibility
+
+This repository uses the included proprietary `LICENSE`.
+
+Operators remain responsible for complying with NLvoorelkaar terms, privacy law,
+credential handling, consent, retention, and incident response. The software
+provides guardrails and auditability, but it does not remove those obligations.
